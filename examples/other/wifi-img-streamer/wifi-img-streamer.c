@@ -143,7 +143,7 @@ uint32_t footerSize;
 pi_buffer_t jpeg_data;
 uint32_t jpegSize;
 
-static StreamerMode_t streamerMode = RAW_ENCODING;
+static StreamerMode_t streamerMode = JPEG_ENCODING;
 
 static CPXPacket_t txp;
 
