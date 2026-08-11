@@ -1,4 +1,6 @@
 **/.vscode
+**/.commandcode/
+examples/other/wifi-img-streamer/aideck-gap8-bootloader/
 
 # GAP8 build files
 examples/**/BUILD*
