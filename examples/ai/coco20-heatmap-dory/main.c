@@ -41,6 +41,7 @@ typedef struct {
 
 static volatile int wifi_client_connected;
 static CPXPacket_t wifi_rx, wifi_tx;
+static struct pi_device camera;
 
 static void wifi_control_task(void *arg) {
   (void)arg;
@@ -100,13 +101,21 @@ static int open_himax(struct pi_device *camera) {
   pi_himax_conf_init(&config);
   config.format = PI_CAMERA_QVGA;
   pi_open_from_conf(camera, &config);
-  if (pi_camera_open(camera)) return -1;
-  /* This is the known-good initialization sequence from wifi-img-streamer. */
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 camera: opening Himax\n");
+  if (pi_camera_open(camera)) {
+    cpxPrintToConsole(LOG_TO_CRTP, "coco20 camera: open failed\n");
+    return -1;
+  }
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 camera: opened\n");
+  /* Проверенная последовательность инициализации из wifi-img-streamer. */
   pi_camera_control(camera, PI_CAMERA_CMD_START, 0);
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 camera: started\n");
   pi_camera_reg_set(camera, 0x0101, &orientation);
   pi_time_wait_us(1000000);
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 camera: orientation set\n");
   pi_camera_control(camera, PI_CAMERA_CMD_STOP, 0);
   pi_camera_control(camera, PI_CAMERA_CMD_AEG_INIT, 0);
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 camera: ready\n");
   return 0;
 }
 
@@ -159,23 +168,28 @@ static void detector_head_fc(const uint8_t *input, int32_t *output) {
 
 static void detector_task(void *arg) {
   (void)arg;
-  struct pi_device camera;
   uint8_t *camera_buffer; uint8_t *arena;
-  /* Give the ESP32 CPX router time to come up, as in Bitcraze's streamer. */
+  /* Даём CPX-маршрутизатору ESP32 время на запуск, как в штатном стримере. */
   vTaskDelay(2000);
   setup_wifi_ap();
   /* setup_wifi_ap uses the same packet for control commands. Restore the
    * application route before sending image bytes. */
   cpxInitRoute(CPX_T_GAP8, CPX_T_WIFI_HOST, CPX_F_APP, &wifi_tx.route);
-  /* Keep the boot-configured clocks: explicit FLL changes are unstable on
-   * this board revision. */
+  /* Оставляем тактирование из конфигурации загрузки: явная смена FLL
+   * нестабильна на этой ревизии платы. */
   camera_buffer = pi_l2_malloc(CAMERA_BYTES);
-  arena = pi_l2_malloc(L2_ARENA_BYTES);
-  if (!camera_buffer || !arena) {
-    cpxPrintToConsole(LOG_TO_CRTP, "coco20: L2 allocation failed camera=%p arena=%p\n", camera_buffer, arena);
+  if (!camera_buffer) {
+    cpxPrintToConsole(LOG_TO_CRTP, "coco20: L2 allocation failed camera=%p\n", camera_buffer);
     return;
   }
   if (open_himax(&camera)) { cpxPrintToConsole(LOG_TO_CRTP, "coco20: camera open failed\n"); return; }
+  /* Himax использует временную L2-память при открытии; выделяем арену
+   * детектора только после завершения инициализации камеры. */
+  arena = pi_l2_malloc(L2_ARENA_BYTES);
+  if (!arena) {
+    cpxPrintToConsole(LOG_TO_CRTP, "coco20: L2 allocation failed arena=%p\n", arena);
+    return;
+  }
   network_initialize();
   cpxPrintToConsole(LOG_TO_CRTP, "coco20 timing mode: raw-stream=off model=160x160\n");
   unsigned int frame = 0;
