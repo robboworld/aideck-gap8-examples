@@ -1,99 +1,85 @@
-# Tiny shapes with DORY
+# TinyShapeCNN с DORY
 
-This AI-deck example classifies a bright `circle`, `square`, or `triangle` on
-a dark background with a NEMO-quantized DORY network. It supports:
+Пример AI-deck классифицирует яркие `circle`, `square` и `triangle` на тёмном
+фоне с помощью сети DORY, квантизованной NEMO. Поддерживаются режимы:
 
-- `INPUT_MODE=static`: one committed golden input for deterministic GVSOC
-  checksum verification.
-- `INPUT_MODE=camera`: continuous Himax capture, preprocessing, inference,
-  CPX console output, and a binary `CPX_F_APP` result packet.
+- `INPUT_MODE=static` — зафиксированный эталонный вход для воспроизводимой
+  проверки контрольных сумм в GVSOC;
+- `INPUT_MODE=camera` — захват Himax, предобработка, инференс, вывод CPX и
+  бинарный пакет результата `CPX_F_APP`.
 
-## Model contract
+## Контракт модели
 
-The input is one unsigned 8-bit grayscale tensor with shape `1x1x32x32`.
-Camera mode center-crops the 324x244 Himax frame to 244x244 and applies a
-deterministic nearest-neighbor resize. Values remain in `[0, 255]`; there is
-no mean subtraction or floating-point normalization.
+Вход — беззнаковый 8-битный grayscale-тензор формы `1x1x32x32`. В режиме
+камеры кадр Himax `324x244` центрируется до `244x244` и изменяется до `32x32`
+детерминированным ближайшим соседом. Значения остаются в `[0, 255]`.
 
-The three signed 32-bit outputs are integer logits in this order:
-`circle`, `square`, `triangle`. The reported `margin` is the integer
-difference between the largest and second-largest logit. It is not a
-calibrated probability or confidence.
+Три знаковых 32-битных выхода — целочисленные logit в порядке `circle`,
+`square`, `triangle`. `margin` — разность максимального и второго logit, а не
+калиброванная вероятность.
 
-The DORY directional allocator uses a verified 32 KiB L2 arena. The original
-generated 380 KB example allocation was a generic template value and left
-insufficient L2 memory for the 79 KB camera frame and FreeRTOS/CPX firmware.
+Проверенная арена направленного аллокатора DORY занимает 32 КиБ L2. Шаблонное
+значение 380 КиБ было непригодно: оно оставляло недостаточно места для кадра
+камеры и FreeRTOS/CPX.
 
-## Reproduce the generated runtime
+## Пересборка runtime
 
-From the repository's `tinyml_demo` directory:
+Из каталога `tinyml_demo`:
 
 ```bash
 ./scripts/package_aideck_runtime.sh
 ```
 
-The command checks IntegerDeployable accuracy, copies only DORY runtime
-sources, headers, and ReadFS payloads into `generated/`, installs the
-FreeRTOS-compatible PMSIS cluster DMA adapter, fixes the generated async
-argument bound, and writes SHA-256 metadata.
+Скрипт проверяет IntegerDeployable accuracy, копирует исходники runtime DORY,
+заголовки и ReadFS payload в `generated/`, устанавливает DMA-адаптер PMSIS для
+FreeRTOS, проверяет асинхронные аргументы и записывает SHA-256 метаданные.
 
-Do not edit `generated/` manually. Regenerate it after changing the model,
-quantization, or DORY configuration.
+`generated/` нельзя редактировать вручную. После изменения модели, квантизации
+или конфигурации DORY пакет нужно пересоздать.
 
-## Verify without hardware
-
-Run the static application and all layer checksums in GVSOC:
+## Проверка без оборудования
 
 ```bash
 cd ../../../../tinyml_demo
 ./scripts/docker_run_aideck_gvsoc.sh
 ```
 
-Expected final output includes:
-
-```text
-Checking final output: Checksum OK
-class=square id=1 logits=[-34617,23583,-20334] margin=43917
-```
-
-Cross-compile the camera/CPX firmware without attempting to connect to a
-physical deck:
+Ожидаемый результат содержит `Checksum OK` и строку с классом, logit, margin и
+числом циклов. Сборка прошивки камеры/CPX без подключения к плате:
 
 ```bash
 ./scripts/docker_build_aideck_camera.sh
 ```
 
-## Build and flash with an AI-deck
+## Сборка и прошивка AI-deck
 
-After sourcing a compatible GAP SDK:
+После подключения совместимого GAP SDK:
 
 ```bash
 make clean all CORE=8 platform=board INPUT_MODE=camera
 make flash CORE=8 platform=board INPUT_MODE=camera
 ```
 
-The CPX console prints the class, all logits, the integer margin, and cluster
-inference cycles. `CPX_F_APP` also sends a packed, little-endian 24-byte
-version-1 packet:
+CPX выводит класс, все logit, целочисленный margin и число циклов инференса.
+`CPX_F_APP` передаёт little-endian пакет версии 1 размером 24 байта:
 
-- byte 0: protocol version (`1`)
-- byte 1: class ID
-- bytes 2-3: reserved (`0`)
-- bytes 4-15: three signed 32-bit logits
-- bytes 16-19: unsigned 32-bit top-1/top-2 margin
-- bytes 20-23: unsigned 32-bit inference cycles
+- байт 0 — версия протокола;
+- байт 1 — ID класса;
+- байты 2–3 — резерв;
+- байты 4–15 — три знаковых 32-битных logit;
+- байты 16–19 — беззнаковый margin top-1/top-2;
+- байты 20–23 — беззнаковое число циклов инференса.
 
-## Limitations and troubleshooting
+## Ограничения и диагностика
 
-The training set is synthetic. Live-camera accuracy, robustness to lighting,
-and probability calibration have not been measured; collect real AI-deck
-frames before making those claims. A bright centered shape on a dark
-background is the intended starting condition.
+Датасет синтетический. Точность на живой камере, устойчивость к освещению и
+калибровка вероятности не измерялись. Яркая фигура по центру на тёмном фоне —
+исходное условие проверки.
 
-- Missing `generated/`: run `tinyml_demo/scripts/package_aideck_runtime.sh`.
-- ReadFS cannot open a weight: rebuild the flash image and flash both the
-  firmware and filesystem.
-- Camera build tries to access JTAG: use the provided cross-build script,
-  which builds with `platform=gvsoc` but does not run the camera application.
-- Static checksum mismatch: regenerate NEMO golden vectors, DORY code, and
-  the packaged runtime from the same model checkpoint.
+- Нет `generated/` — запустить `tinyml_demo/scripts/package_aideck_runtime.sh`.
+- ReadFS не открывает вес — пересобрать flash-образ и прошить firmware вместе
+  с файловой системой.
+- Камерная сборка пытается обращаться к JTAG — использовать скрипт сборки,
+  который собирает с `platform=gvsoc`, но не запускает камерное приложение.
+- Не совпадает checksum — пересоздать эталонные векторы NEMO, код DORY и runtime
+  из одного и того же чекпоинта.
