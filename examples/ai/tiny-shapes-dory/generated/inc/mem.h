@@ -3,7 +3,8 @@
 
 #include<stddef.h>
 
-void  mem_init();
+/* Returns 0 on success, negative on failure (does not pmsis_exit). */
+int mem_init(void);
 struct pi_device *get_ram_ptr();
 void *ram_malloc(size_t size);
 void  ram_free(void *ptr, size_t size);

@@ -8,19 +8,30 @@
 #include "network.h"
 #include "pmsis.h"
 
-extern int cycle_network_execution;
-
 static uint8_t *l2_arena;
+static int32_t *l2_logits;
 static int initialized;
 
 int tiny_shapes_inference_init(void) {
   if (initialized) {
     return 0;
   }
-  mem_init();
+  if (mem_init()) {
+    return -2;
+  }
   network_initialize();
   l2_arena = (uint8_t *)pi_l2_malloc(TINY_SHAPES_L2_ARENA_BYTES);
   if (l2_arena == NULL) {
+    network_terminate();
+    return -1;
+  }
+  /* Final FC output is written by the cluster — must live in L2, not FC TCDM. */
+  l2_logits = (int32_t *)pi_l2_malloc(
+    TINY_SHAPES_CLASS_COUNT * sizeof(int32_t)
+  );
+  if (l2_logits == NULL) {
+    pi_l2_free(l2_arena, TINY_SHAPES_L2_ARENA_BYTES);
+    l2_arena = NULL;
     network_terminate();
     return -1;
   }
@@ -33,19 +44,20 @@ int tiny_shapes_inference_run(
   int32_t logits[TINY_SHAPES_CLASS_COUNT],
   uint32_t *cycles
 ) {
-  if (!initialized || input == NULL || logits == NULL) {
+  if (!initialized || input == NULL || logits == NULL || l2_logits == NULL) {
     return -1;
   }
   memcpy(l2_arena, input, TINY_SHAPES_INPUT_BYTES);
   network_run(
     l2_arena,
     TINY_SHAPES_L2_ARENA_BYTES,
-    logits,
+    l2_logits,
     0,
     1
   );
+  memcpy(logits, l2_logits, TINY_SHAPES_CLASS_COUNT * sizeof(int32_t));
   if (cycles != NULL) {
-    *cycles = (uint32_t)cycle_network_execution;
+    *cycles = (uint32_t)network_status.cycles;
   }
   return 0;
 }
@@ -75,6 +87,10 @@ void tiny_shapes_inference_deinit(void) {
     return;
   }
   network_terminate();
+  if (l2_logits != NULL) {
+    pi_l2_free(l2_logits, TINY_SHAPES_CLASS_COUNT * sizeof(int32_t));
+    l2_logits = NULL;
+  }
   pi_l2_free(l2_arena, TINY_SHAPES_L2_ARENA_BYTES);
   l2_arena = NULL;
   initialized = 0;

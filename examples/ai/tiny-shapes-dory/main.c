@@ -1,35 +1,30 @@
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "bsp/bsp.h"
-#include "bsp/camera/himax.h"
 #include "inference.h"
 #include "model_metadata.h"
+#include "network.h"
 #include "pmsis.h"
 #include "preprocess.h"
 #include "result_protocol.h"
-
-#ifdef TINY_SHAPES_ENABLE_CPX
 #include "cpx.h"
+
+#ifdef TINY_SHAPES_CAMERA_INPUT
+#include "bsp/camera/himax.h"
 #endif
 
 #define IMG_ORIENTATION 0x0101
+#define CAMERA_INFER_PERIOD_US (500000)
 
 static uint8_t *model_input;
+static tiny_shapes_result_packet_t last_result;
+static volatile int has_result;
+static volatile const char *phase = "boot";
 
 static void publish_result(const tiny_shapes_result_packet_t *result) {
-  printf(
-    "class=%s id=%u logits=[%ld,%ld,%ld] margin=%lu cycles=%lu\n",
-    tiny_shapes_class_name(result->class_id),
-    result->class_id,
-    (long)result->logits[0],
-    (long)result->logits[1],
-    (long)result->logits[2],
-    (unsigned long)result->margin,
-    (unsigned long)result->cycles
-  );
-#ifdef TINY_SHAPES_ENABLE_CPX
+  last_result = *result;
+  has_result = 1;
   cpxPrintToConsole(
     LOG_TO_CRTP,
     "tiny-shapes class=%s logits=[%ld,%ld,%ld] margin=%lu cycles=%lu\n",
@@ -40,13 +35,6 @@ static void publish_result(const tiny_shapes_result_packet_t *result) {
     (unsigned long)result->margin,
     (unsigned long)result->cycles
   );
-
-  CPXPacket_t packet;
-  cpxInitRoute(CPX_T_GAP8, CPX_T_STM32, CPX_F_APP, &packet.route);
-  memcpy(packet.data, result, sizeof(*result));
-  packet.dataLength = sizeof(*result);
-  cpxSendPacketBlocking(&packet);
-#endif
 }
 
 static int run_inference(void) {
@@ -61,6 +49,32 @@ static int run_inference(void) {
   return 0;
 }
 
+static void heartbeat_task(void *parameters) {
+  (void)parameters;
+  const TickType_t delay = 1000 / portTICK_PERIOD_MS;
+  while (1) {
+    if (has_result) {
+      cpxPrintToConsole(
+        LOG_TO_CRTP,
+        "tiny-shapes class=%s logits=[%ld,%ld,%ld] cycles=%lu phase=%s\n",
+        tiny_shapes_class_name(last_result.class_id),
+        (long)last_result.logits[0],
+        (long)last_result.logits[1],
+        (long)last_result.logits[2],
+        (unsigned long)last_result.cycles,
+        (const char *)phase
+      );
+    } else {
+      cpxPrintToConsole(
+        LOG_TO_CRTP,
+        "tiny-shapes status: %s\n",
+        (const char *)phase
+      );
+    }
+    vTaskDelay(delay);
+  }
+}
+
 #ifdef TINY_SHAPES_CAMERA_INPUT
 static struct pi_device camera;
 static pi_task_t camera_task;
@@ -70,12 +84,13 @@ static void capture_next_frame(void);
 
 static void camera_handler(void *argument) {
   (void)argument;
-  pi_camera_control(&camera, PI_CAMERA_CMD_STOP, NULL);
+  pi_camera_control(&camera, PI_CAMERA_CMD_STOP, 0);
   if (tiny_shapes_preprocess(camera_buffer, model_input)) {
     cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes preprocessing failed\n");
   } else if (run_inference()) {
     cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes inference failed\n");
   }
+  pi_time_wait_us(CAMERA_INFER_PERIOD_US);
   capture_next_frame();
 }
 
@@ -86,7 +101,7 @@ static void capture_next_frame(void) {
     TINY_SHAPES_CAMERA_BYTES,
     pi_task_callback(&camera_task, camera_handler, NULL)
   );
-  pi_camera_control(&camera, PI_CAMERA_CMD_START, NULL);
+  pi_camera_control(&camera, PI_CAMERA_CMD_START, 0);
 }
 
 static int open_camera(void) {
@@ -97,59 +112,127 @@ static int open_camera(void) {
   if (pi_camera_open(&camera)) {
     return -1;
   }
-  pi_camera_control(&camera, PI_CAMERA_CMD_START, NULL);
+  pi_camera_control(&camera, PI_CAMERA_CMD_START, 0);
   uint8_t orientation = 3;
+  uint8_t reg_value = 0;
   pi_camera_reg_set(&camera, IMG_ORIENTATION, &orientation);
   pi_time_wait_us(1000000);
-  pi_camera_control(&camera, PI_CAMERA_CMD_STOP, NULL);
-  pi_camera_control(&camera, PI_CAMERA_CMD_AEG_INIT, NULL);
+  pi_camera_reg_get(&camera, IMG_ORIENTATION, &reg_value);
+  if (orientation != reg_value) {
+    cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes: camera rotate failed\n");
+    return -1;
+  }
+  pi_camera_control(&camera, PI_CAMERA_CMD_STOP, 0);
+  pi_camera_control(&camera, PI_CAMERA_CMD_AEG_INIT, 0);
   return 0;
 }
 #endif
 
-static void application(void *argument) {
-  (void)argument;
-  pi_bsp_init();
-  pi_freq_set(PI_FREQ_DOMAIN_FC, 200000000);
-  pi_freq_set(PI_FREQ_DOMAIN_CL, 170000000);
-
-#ifdef TINY_SHAPES_ENABLE_CPX
+static void application(void) {
+  phase = "cpx init";
   cpxInit();
-  cpxEnableFunction(CPX_F_APP);
-  cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes DORY starting\n");
-#endif
+  phase = "cpx ready";
+  cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes: cpx ready\n");
 
-  if (tiny_shapes_inference_init()) {
-    printf("tiny-shapes inference initialization failed\n");
-    pmsis_exit(-1);
-  }
-  model_input = (uint8_t *)pi_l2_malloc(TINY_SHAPES_INPUT_BYTES);
-  if (model_input == NULL) {
-    printf("tiny-shapes input allocation failed\n");
-    pmsis_exit(-2);
-  }
+  xTaskCreate(
+    heartbeat_task,
+    "hb",
+    configMINIMAL_STACK_SIZE * 2,
+    NULL,
+    tskIDLE_PRIORITY + 1,
+    NULL
+  );
+  pi_time_wait_us(300000);
 
 #ifdef TINY_SHAPES_CAMERA_INPUT
-  camera_buffer = (uint8_t *)pi_l2_malloc(TINY_SHAPES_CAMERA_BYTES);
-  if (camera_buffer == NULL || open_camera()) {
-    cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes camera setup failed\n");
-    pmsis_exit(-3);
+  /* Match wifi-img-streamer: clocks/voltage, then Himax, before heavy L2 use. */
+  phase = "clocks";
+  pi_freq_set(PI_FREQ_DOMAIN_FC, 250000000);
+  __pi_pmu_voltage_set(PI_PMU_DOMAIN_FC, 1200);
+  cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes: clocks set\n");
+
+  phase = "camera open";
+  cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes: opening camera...\n");
+  if (open_camera()) {
+    phase = "camera open failed";
+    while (1) {
+      pi_yield();
+    }
   }
+  phase = "camera open ok";
+  cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes: camera open ok\n");
+#endif
+
+  phase = "inference init";
+  if (tiny_shapes_inference_init()) {
+    phase = "inference init failed";
+    while (1) {
+      pi_yield();
+    }
+  }
+  phase = "network ready";
+
+  model_input = (uint8_t *)pi_l2_malloc(TINY_SHAPES_INPUT_BYTES);
+  if (model_input == NULL) {
+    phase = "input alloc failed";
+    while (1) {
+      pi_yield();
+    }
+  }
+
+  phase = "golden load";
+  if (tiny_shapes_load_golden_input(model_input) != 0) {
+    phase = "golden load failed";
+    while (1) {
+      pi_yield();
+    }
+  }
+  {
+    unsigned int sum = 0;
+    for (unsigned i = 0; i < TINY_SHAPES_INPUT_BYTES; ++i) {
+      sum += model_input[i];
+    }
+    cpxPrintToConsole(
+      LOG_TO_CRTP,
+      "tiny-shapes: golden_sum=%u expect=68734\n",
+      sum
+    );
+  }
+
+  phase = "golden run";
+  if (run_inference()) {
+    phase = "golden inference failed";
+    while (1) {
+      pi_yield();
+    }
+  }
+  phase = "golden ok";
+
+#ifdef TINY_SHAPES_CAMERA_INPUT
+  phase = "camera alloc";
+  camera_buffer = (uint8_t *)pi_l2_malloc(TINY_SHAPES_CAMERA_BYTES);
+  if (camera_buffer == NULL) {
+    phase = "camera alloc failed";
+    while (1) {
+      pi_yield();
+    }
+  }
+
+  phase = "camera loop";
+  cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes: camera loop\n");
   capture_next_frame();
   while (1) {
     pi_yield();
   }
 #else
-  if (tiny_shapes_load_golden_input(model_input) || run_inference()) {
-    printf("tiny-shapes static inference failed\n");
-    pmsis_exit(-4);
+  phase = "static ok";
+  while (1) {
+    pi_yield();
   }
-  tiny_shapes_inference_deinit();
-  pi_l2_free(model_input, TINY_SHAPES_INPUT_BYTES);
-  pmsis_exit(0);
 #endif
 }
 
 int main(void) {
-  return pmsis_kickoff(application);
+  pi_bsp_init();
+  return pmsis_kickoff((void *)application);
 }

@@ -2,11 +2,15 @@
 #include "pmsis.h"
 
 void print_perf(const char *name, const int cycles, const int macs) {
-  float perf = (float) macs / cycles;
   printf("\n%s performance:\n", name);
   printf("  - num cycles: %d\n", cycles);
   printf("  - MACs: %d\n", macs );
-  printf("  - MAC/cycle: %g\n", perf);
+  if (cycles > 0) {
+    float perf = (float) macs / (float) cycles;
+    printf("  - MAC/cycle: %g\n", perf);
+  } else {
+    printf("  - MAC/cycle: n/a (0 cycles)\n");
+  }
   printf("  - n. of Cores: %d\n\n", NUM_CORES);
 }
 

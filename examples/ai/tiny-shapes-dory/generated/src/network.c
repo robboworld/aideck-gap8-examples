@@ -24,6 +24,9 @@
 #include "directional_allocator.h"
 #include "mem.h"
 #include <string.h>
+#ifdef TINY_SHAPES_ENABLE_CPX
+#include "cpx.h"
+#endif
 #include "BNReluConvolution2.h"
 #include "Pooling3.h"
 #include "Pooling1.h"
@@ -37,31 +40,53 @@
 #define VERBOSE 1
 #endif
 
-#define L3_WEIGHTS_SIZE 4000000
-#define L3_INPUT_SIZE 1500000
-#define L3_OUTPUT_SIZE 1500000
+#define L3_WEIGHTS_SIZE 8192
+#define L3_INPUT_SIZE 2048
+#define L3_OUTPUT_SIZE 2048
 static void *L3_weights = NULL;
 static void *L3_input = NULL;
 static void *L3_output = NULL;
-int cycle_network_execution;
-/* Moves the weights and the biases from hyperflash to hyperram */
-void network_initialize() {
 
+network_status_t network_status;
+
+static unsigned int byte_sum(const uint8_t *d, size_t size) {
+  unsigned int sum = 0;
+  for (size_t i = 0; i < size; ++i) {
+    sum += d[i];
+  }
+  return sum;
+}
+
+/* Moves the weights and the biases into the L2-backed L3 pool. */
+void network_initialize() {
+#ifdef TINY_SHAPES_BRINGUP
+  cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes ni: alloc\n");
+#endif
   L3_weights = ram_malloc(L3_WEIGHTS_SIZE);
   L3_input = ram_malloc(L3_INPUT_SIZE);
   L3_output = ram_malloc(L3_OUTPUT_SIZE);
-
-#ifdef VERBOSE
-  printf("\nL3 Buffer alloc initial\t@ %d:\t%s\n", (unsigned int)L3_weights, L3_weights?"Ok":"Failed");
-  printf("\nL3 Buffer alloc initial\t@ %d:\t%s\n", (unsigned int)L3_input, L3_input?"Ok":"Failed");
-  printf("\nL3 Buffer alloc initial\t@ %d:\t%s\n", (unsigned int)L3_output, L3_output?"Ok":"Failed");
+#ifdef TINY_SHAPES_BRINGUP
+  cpxPrintToConsole(
+    LOG_TO_CRTP,
+    "tiny-shapes ni: ptrs %p %p %p\n",
+    L3_weights, L3_input, L3_output
+  );
 #endif
+  if (L3_weights == NULL || L3_input == NULL || L3_output == NULL) {
+    return;
+  }
 
-  void *w_ptr = L3_weights;
+  uint8_t *w_ptr = (uint8_t *)L3_weights;
   for (int i = 0; i < 4; i++) {
+#ifdef TINY_SHAPES_BRINGUP
+    cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes ni: load %d\n", i);
+#endif
     size_t size = load_file_to_ram(w_ptr, L3_weights_files[i]);
-    L3_weights_size[i] = size;
+    L3_weights_size[i] = (int)size;
     w_ptr += size;
+#ifdef TINY_SHAPES_BRINGUP
+    cpxPrintToConsole(LOG_TO_CRTP, "tiny-shapes ni: loaded %d n=%u\n", i, (unsigned)size);
+#endif
   }
 }
 
@@ -109,23 +134,24 @@ struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_siz
   struct pi_device cluster_dev = {0};
   struct pi_cluster_conf conf;
   struct pi_cluster_task cluster_task = {0};
-  // First open the cluster
+  /* Must outlive the cluster task — cannot live on this stack frame.
+   * args[5] is a completion canary written by the cluster. */
+  static unsigned int args[6];
   pi_cluster_conf_init(&conf);
   conf.id=0;
-  unsigned int args[5];
   args[0] = (unsigned int) l2_buffer;
   args[1] = (unsigned int) l2_buffer_size;
   args[2] = (unsigned int) l2_final_output;
   args[3] = (unsigned int) exec;
   args[4] = (unsigned int) initial_dir;
-  // open cluster...
+  args[5] = 0;
   pi_cluster_task(&cluster_task, network_run_cluster, args);
   pi_open_from_conf(&cluster_dev, &conf);
-  if (pi_cluster_open(&cluster_dev))
-    return;
-  // Then offload an entry point, this will get executed on the cluster controller
-  cluster_task.stack_size = 3500;
-  cluster_task.slave_stack_size = 3400;
+  if (pi_cluster_open(&cluster_dev)) {
+    return (struct network_run_token){0};
+  }
+  cluster_task.stack_size = 6096;
+  cluster_task.slave_stack_size = 1024;
   pi_cluster_send_task_to_cl(&cluster_dev, &cluster_task);
   return (struct network_run_token) {
     .cluster_dev = cluster_dev
@@ -135,12 +161,19 @@ struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_siz
 void network_run_wait(struct network_run_token token)
 {
   pi_cluster_close(&token.cluster_dev);
-  print_perf("Final", cycle_network_execution, 590976);
 }
 
 void network_run(void *l2_buffer, size_t l2_buffer_size, void *l2_final_output, int exec, int initial_dir)
 {
-  network_run_wait(network_run_async(l2_buffer, l2_buffer_size, l2_final_output, exec, initial_dir));
+  network_status.done = 0;
+  /* First layer is marked L3_input: DMA reads activations from HyperRAM.
+   * Callers place the frame at the start of l2_buffer — promote it to L3. */
+  if (L3_input != NULL && l2_buffer != NULL) {
+    ram_write(L3_input, l2_buffer, (size_t)activations_size[0]);
+  }
+  struct network_run_token token =
+    network_run_async(l2_buffer, l2_buffer_size, l2_final_output, exec, initial_dir);
+  network_run_wait(token);
 }
 
 void network_run_cluster(void *args) {
@@ -183,7 +216,7 @@ void network_run_cluster(void *args) {
 /* --------- SECTION 1 END ---------- */
 /* ---------------------------------- */
   // perf measurement begin
-  cycle_network_execution = 0;
+  network_status.cycles = 0;
 /* MAIN SECTION
   - for loop over all the layers of the network
   - double buffering using L3
@@ -209,6 +242,11 @@ void network_run_cluster(void *args) {
 
     if (allocate_layer[i] == 1)
       cl_ram_read(L2_weights, L3_weights_curr, weights_size[i]);
+
+    if (i == 0) {
+      network_status.chk_in0 = byte_sum((const uint8_t *)L2_input, (size_t)activations_size[0]);
+      network_status.chk_w0 = byte_sum((const uint8_t *)L2_weights, (size_t)weights_size[0]);
+    }
 
 #ifdef VERBOSE
     if (L3_input_layers[i] == 1)
@@ -252,7 +290,7 @@ void network_run_cluster(void *args) {
     // performance measurements: end
     pi_perf_stop();
     perf_cyc =  pi_perf_read(PI_PERF_CYCLES);
-    cycle_network_execution += perf_cyc;
+    network_status.cycles += perf_cyc;
 
 
     // TODO: What error?
@@ -325,6 +363,15 @@ void network_run_cluster(void *args) {
   //memcpy(L2_output, l2_final_output, activations_out_size[6]); // BUGGY!
   for (int i=0; i<activations_out_size[6]; i++)
     *((uint8_t*)(l2_final_output+i)) = *((uint8_t*)(L2_output+i));
+
+  network_status.chk_out = byte_sum((const uint8_t *)L2_output, (size_t)activations_out_size[6]);
+
+  /* Ensure FC core observes cluster-side writes to shared L2. */
+  asm volatile("": : :"memory");
+  network_status.done = 0xA5A5A5A5u;
+  real_args[5] = 0xA5A5A5A5u;
+  asm volatile("": : :"memory");
+
 
 /* ---------------------------------- */
 /* --------- SECTION 2 END ---------- */

@@ -28,6 +28,15 @@ struct network_run_token {
   struct pi_device cluster_dev;
 };
 
+typedef struct {
+  volatile int cycles;
+  volatile unsigned int done;
+  volatile unsigned int chk_in0;
+  volatile unsigned int chk_w0;
+  volatile unsigned int chk_out;
+} network_status_t;
+
+extern network_status_t network_status;
 
 void network_terminate();
 void network_initialize();
