@@ -18,7 +18,15 @@ extern int cycle_network_execution;
  * room for the 120 KiB flash-loaded weight block, camera frame and RTOS. */
 #define L2_ARENA_BYTES 200000
 #define HEAD_WEIGHT_OFFSET (400 + 7680 + 35840 + 58880)
+#ifndef STREAM_RAW_IMAGES
 #define STREAM_RAW_IMAGES 0
+#endif
+#ifndef REPORT_EVERY
+#define REPORT_EVERY 1
+#endif
+#ifndef DETECTOR_PERIOD_US
+#define DETECTOR_PERIOD_US 500000
+#endif
 
 static const char *names[20] = {"bicycle","motorcycle","airplane","bus","train","truck","boat","bird","cat","dog","horse","sheep","cow","elephant","zebra","giraffe","couch","tv","suitcase","backpack"};
 
@@ -186,7 +194,7 @@ static void detector_task(void *arg) {
     const uint32_t t_preprocess = pi_time_get_us();
     network_run(arena, L2_ARENA_BYTES, head_output, 0, 1);
     const uint32_t t_inference = pi_time_get_us();
-    if (++frame % 10 == 0) {
+    if (++frame % REPORT_EVERY == 0) {
       cpxPrintToConsole(LOG_TO_CRTP,
         "coco20 timing us: capture=%lu stream=%lu preprocess=%lu inference=%lu camera_to_result=%lu\n",
         (unsigned long)(t_capture - t0), (unsigned long)(t_stream - t_capture),
@@ -194,7 +202,7 @@ static void detector_task(void *arg) {
         (unsigned long)(t_inference - t0));
       report(head_output);
     }
-    pi_time_wait_us(500000);
+    pi_time_wait_us(DETECTOR_PERIOD_US);
   }
 }
 
