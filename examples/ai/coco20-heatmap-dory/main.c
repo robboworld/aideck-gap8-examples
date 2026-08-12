@@ -25,7 +25,14 @@ extern int cycle_network_execution;
 #define REPORT_EVERY 1
 #endif
 #ifndef DETECTOR_PERIOD_US
-#define DETECTOR_PERIOD_US 500000
+#define DETECTOR_PERIOD_US 0
+#endif
+#if defined(COCO20_INPUT_STATIC)
+#define COCO20_USE_CAMERA 0
+#elif defined(COCO20_INPUT_CAMERA)
+#define COCO20_USE_CAMERA 1
+#else
+#define COCO20_USE_CAMERA 1
 #endif
 
 static const char *names[20] = {"bicycle","motorcycle","airplane","bus","train","truck","boat","bird","cat","dog","horse","sheep","cow","elephant","zebra","giraffe","couch","tv","suitcase","backpack"};
@@ -41,7 +48,9 @@ typedef struct {
 
 static volatile int wifi_client_connected;
 static CPXPacket_t wifi_rx, wifi_tx;
+#if COCO20_USE_CAMERA
 static struct pi_device camera;
+#endif
 
 static void wifi_control_task(void *arg) {
   (void)arg;
@@ -95,6 +104,7 @@ static void send_image(uint8_t *image) {
   }
 }
 
+#if COCO20_USE_CAMERA
 static int open_himax(struct pi_device *camera) {
   struct pi_himax_conf config;
   uint8_t orientation = 3;
@@ -130,6 +140,19 @@ static void preprocess(const uint8_t *camera, uint8_t *input) {
     for (int x = 0; x < 160; ++x) out[x] = in[x * CAMERA_WIDTH / 160];
   }
 }
+#else
+/* Synthetic 160x160 grayscale: letterbox-like dark bars + bright box.
+ * Used when Himax is unavailable; only for bring-up / inference timing. */
+static void fill_static_input(uint8_t *input) {
+  memset(input, 24, INPUT_BYTES);
+  for (int y = 20; y < 140; ++y) {
+    memset(input + y * 160, 48, 160);
+  }
+  for (int y = 50; y < 110; ++y) {
+    memset(input + y * 160 + 50, 200, 60);
+  }
+}
+#endif
 
 static void report(const int32_t *output) {
   int32_t best = INT32_MIN; int best_class = 0, best_row = 0, best_col = 0;
@@ -168,15 +191,26 @@ static void detector_head_fc(const uint8_t *input, int32_t *output) {
 
 static void detector_task(void *arg) {
   (void)arg;
-  uint8_t *camera_buffer; uint8_t *arena;
+  uint8_t *arena;
+#if COCO20_USE_CAMERA
+  uint8_t *camera_buffer;
+#endif
   /* Даём CPX-маршрутизатору ESP32 время на запуск, как в штатном стримере. */
   vTaskDelay(2000);
   setup_wifi_ap();
   /* setup_wifi_ap uses the same packet for control commands. Restore the
    * application route before sending image bytes. */
   cpxInitRoute(CPX_T_GAP8, CPX_T_WIFI_HOST, CPX_F_APP, &wifi_tx.route);
-  /* Оставляем тактирование из конфигурации загрузки: явная смена FLL
-   * нестабильна на этой ревизии платы. */
+  /* Raise clocks only after CPX is alive. Doing this in main() before
+   * pmsis_kickoff hangs this board (see runtime_probe.c); wifi-img-streamer
+   * can do it earlier, but coco20 cannot. */
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 raising FC to 150 MHz\n");
+  __pi_pmu_voltage_set(PI_PMU_DOMAIN_FC, 1200);
+  pi_freq_set(PI_FREQ_DOMAIN_FC, 150000000);
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 freq fc=%u cl=%u\n",
+                    (unsigned)pi_freq_get(PI_FREQ_DOMAIN_FC),
+                    (unsigned)pi_freq_get(PI_FREQ_DOMAIN_CL));
+#if COCO20_USE_CAMERA
   camera_buffer = pi_l2_malloc(CAMERA_BYTES);
   if (!camera_buffer) {
     cpxPrintToConsole(LOG_TO_CRTP, "coco20: L2 allocation failed camera=%p\n", camera_buffer);
@@ -185,16 +219,26 @@ static void detector_task(void *arg) {
   if (open_himax(&camera)) { cpxPrintToConsole(LOG_TO_CRTP, "coco20: camera open failed\n"); return; }
   /* Himax использует временную L2-память при открытии; выделяем арену
    * детектора только после завершения инициализации камеры. */
+#endif
   arena = pi_l2_malloc(L2_ARENA_BYTES);
   if (!arena) {
     cpxPrintToConsole(LOG_TO_CRTP, "coco20: L2 allocation failed arena=%p\n", arena);
     return;
   }
   network_initialize();
-  cpxPrintToConsole(LOG_TO_CRTP, "coco20 timing mode: raw-stream=off model=160x160\n");
+#if COCO20_USE_CAMERA
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 timing mode: camera raw-stream=%d model=160x160\n",
+                    STREAM_RAW_IMAGES);
+#else
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 timing mode: static (no Himax) model=160x160\n");
+#endif
+  cpxPrintToConsole(LOG_TO_CRTP, "coco20 freq fc=%u cl=%u\n",
+                    (unsigned)pi_freq_get(PI_FREQ_DOMAIN_FC),
+                    (unsigned)pi_freq_get(PI_FREQ_DOMAIN_CL));
   unsigned int frame = 0;
   while (1) {
     const uint32_t t0 = pi_time_get_us();
+#if COCO20_USE_CAMERA
     pi_camera_control(&camera, PI_CAMERA_CMD_START, 0);
     pi_camera_capture(&camera, camera_buffer, CAMERA_BYTES);
     pi_camera_control(&camera, PI_CAMERA_CMD_STOP, 0);
@@ -206,8 +250,20 @@ static void detector_task(void *arg) {
     int32_t *head_output = (int32_t *)(arena + L2_ARENA_BYTES - 20 * 20 * 24 * sizeof(int32_t));
     preprocess(camera_buffer, arena);
     const uint32_t t_preprocess = pi_time_get_us();
+#else
+    const uint32_t t_capture = t0;
+    const uint32_t t_stream = t0;
+    int32_t *head_output = (int32_t *)(arena + L2_ARENA_BYTES - 20 * 20 * 24 * sizeof(int32_t));
+    fill_static_input(arena);
+    const uint32_t t_preprocess = pi_time_get_us();
+#endif
     network_run(arena, L2_ARENA_BYTES, head_output, 0, 1);
     const uint32_t t_inference = pi_time_get_us();
+    if (frame == 0) {
+      cpxPrintToConsole(LOG_TO_CRTP, "coco20 freq_after_cluster fc=%u cl=%u\n",
+                        (unsigned)pi_freq_get(PI_FREQ_DOMAIN_FC),
+                        (unsigned)pi_freq_get(PI_FREQ_DOMAIN_CL));
+    }
     if (++frame % REPORT_EVERY == 0) {
       cpxPrintToConsole(LOG_TO_CRTP,
         "coco20 timing us: capture=%lu stream=%lu preprocess=%lu inference=%lu camera_to_result=%lu\n",
@@ -223,7 +279,11 @@ static void detector_task(void *arg) {
 static void application(void) {
   cpxInit();
   cpxEnableFunction(CPX_F_WIFI_CTRL);
+#if COCO20_USE_CAMERA
   cpxPrintToConsole(LOG_TO_CRTP, "-- coco20 detector streamer --\n");
+#else
+  cpxPrintToConsole(LOG_TO_CRTP, "-- coco20 detector static (no Himax) --\n");
+#endif
   if (xTaskCreate(wifi_control_task, "wifi-ctrl", configMINIMAL_STACK_SIZE * 2,
                   NULL, tskIDLE_PRIORITY + 1, NULL) != pdPASS ||
       xTaskCreate(detector_task, "detector", configMINIMAL_STACK_SIZE * 6,
@@ -233,4 +293,7 @@ static void application(void) {
   }
   while (1) pi_yield();
 }
-int main(void) { pi_bsp_init(); return pmsis_kickoff((void *)application); }
+int main(void) {
+  pi_bsp_init();
+  return pmsis_kickoff((void *)application);
+}

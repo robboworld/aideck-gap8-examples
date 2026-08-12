@@ -67,22 +67,22 @@ void BNReluConvolution4(
   DMA_copy_lambda.tid = dory_dma_channel;
   
   DMA_copy_x.hwc_to_chw = 0;
-  DMA_copy_x.stride_2d = 128;
-  DMA_copy_x.stride_1d = 16;
+  DMA_copy_x.stride_2d = 1600;
+  DMA_copy_x.stride_1d = 80;
   DMA_copy_x.dir = 1;
   DMA_copy_x.tid = dory_dma_channel;
   
   DMA_copy_W.hwc_to_chw = 0;
-  DMA_copy_W.stride_2d = 144;
-  DMA_copy_W.stride_1d = 16;
-  DMA_copy_W.number_of_2d_copies = 24;
+  DMA_copy_W.stride_2d = 720;
+  DMA_copy_W.stride_1d = 80;
+  DMA_copy_W.number_of_2d_copies = 28;
   DMA_copy_W.number_of_1d_copies = 9;
   DMA_copy_W.dir = 1;
   DMA_copy_W.tid = dory_dma_channel;
   
   DMA_copy_y.hwc_to_chw = 0;
-  DMA_copy_y.stride_2d = 192;
-  DMA_copy_y.stride_1d = 24;
+  DMA_copy_y.stride_2d = 1600;
+  DMA_copy_y.stride_1d = 80;
   DMA_copy_y.dir = 0;
   DMA_copy_y.tid = dory_dma_channel;
 
@@ -111,7 +111,7 @@ void BNReluConvolution4(
   int _i_nof_load=0, _i_nif_load=0, _i_h_load=0, _i_w_load=0;
   int _i_nof_exec=1, _i_nif_exec=1, _i_h_exec=1, _i_w_exec=1;
   volatile uint8_t *im2col;
-  im2col = l1_buffer + 6440;
+  im2col = l1_buffer + 24296;
   uint16_t out_mult = out_mult_in;
   uint16_t out_shift = out_shift_in;
 
@@ -120,15 +120,15 @@ void BNReluConvolution4(
   ////////////////////////////
   pi_cl_team_barrier(0);
 
-  int total_tiles = 1;
+  int total_tiles = 90;
   // tile loop nest
   for(iter=0; iter < total_tiles; iter++) {
     // check if last in any dimension
-      x_tile_size_nif = (_i_nif_load+1 == 1) ? 16 : 16;
-      x_tile_size_h   = (_i_h_load+1 == 1)   ? 8 : 8;
-      x_tile_size_w   = (_i_w_load+1 == 1)   ? 8 : 8;
+      x_tile_size_nif = (_i_nif_load+1 == 1) ? 80 : 80;
+      x_tile_size_h   = (_i_h_load+1 == 3)   ? 5 : 10;
+      x_tile_size_w   = (_i_w_load+1 == 10)   ? 3 : 4;
       x_tile_size_byte = x_tile_size_nif*x_tile_size_h*x_tile_size_w*8/8;
-      x_length_nif_byte = (_i_nif_load+1 == 1)   ? 16 : 16;
+      x_length_nif_byte = (_i_nif_load+1 == 1)   ? 80 : 80;
       // additionally overlap by padding for the first tile after a border one
       //this because in the first tile we use less pixels from x_buffer, since we have the ones of padding
       pad_offset_h=0, pad_offset_w=0;
@@ -136,19 +136,19 @@ void BNReluConvolution4(
         pad_offset_h = 1;
       if(_i_w_load > 0)
         pad_offset_w = 1;
-      y_tile_size_h   = (_i_h_load+1 == 1)   ? 8 : 8;
-      y_tile_size_w   = (_i_w_load+1 == 1)   ? 8 : 8;
-      y_tile_size_nof = (_i_nof_load+1 == 1) ? 24 : 24;
+      y_tile_size_h   = (_i_h_load+1 == 3)   ? 4 : 8;
+      y_tile_size_w   = (_i_w_load+1 == 10)   ? 2 : 2;
+      y_tile_size_nof = (_i_nof_load+1 == 3) ? 24 : 28;
       y_tile_size_byte = y_tile_size_nof*y_tile_size_h*y_tile_size_w*8/8;
-      y_length_nof_byte = (_i_nof_load+1 == 1)   ? 24 : 24;
-      W_tile_size_nof = (_i_nof_load+1 == 1) ? 24 : 24;
-      W_tile_size_nif = (_i_nif_load+1 == 1) ? 16 : 16;
+      y_length_nof_byte = (_i_nof_load+1 == 3)   ? 24 : 28;
+      W_tile_size_nof = (_i_nof_load+1 == 3) ? 24 : 28;
+      W_tile_size_nif = (_i_nif_load+1 == 1) ? 80 : 80;
       W_tile_size_byte = W_tile_size_nof*W_tile_size_nif*8*3*3/8;
-      W_length_nif_byte = (_i_nif_load+1 == 1) ? 16 : 16;
+      W_length_nif_byte = (_i_nif_load+1 == 1) ? 80 : 80;
       // transfer of next input tile in double buffering
       if (_i_nif_load!=_i_nif_exec || _i_w_load!=_i_w_exec || _i_h_load!=_i_h_exec)
       {
-        DMA_copy_x.ext = dory_get_tile_3d(l2_x, _i_h_load, _i_w_load, _i_nif_load, 8, 8, 16, 8, 16,  2, 2,0, pad_offset_h, pad_offset_w, 0, 8);
+        DMA_copy_x.ext = dory_get_tile_3d(l2_x, _i_h_load, _i_w_load, _i_nif_load, 10, 4, 80, 20, 80,  2, 2,0, pad_offset_h, pad_offset_w, 0, 8);
         DMA_copy_x.loc = (l1_buffer + 0);
         DMA_copy_x.number_of_2d_copies = x_tile_size_h;
         DMA_copy_x.number_of_1d_copies = x_tile_size_w;
@@ -159,31 +159,31 @@ void BNReluConvolution4(
       // transfer of next weight tile if changed input or output channels
       if (_i_nif_load!=_i_nif_exec || _i_nof_load!=_i_nof_exec)
       {
-        DMA_copy_W.ext = dory_get_tile_3d(l2_W, _i_nof_load, 0, _i_nif_load, 24, 3*3, 16, 3*3, 16, 0,0,0,0,0,0, 8);
-        DMA_copy_W.loc = (l1_buffer + 2576);
+        DMA_copy_W.ext = dory_get_tile_3d(l2_W, _i_nof_load, 0, _i_nif_load, 28, 3*3, 80, 3*3, 80, 0,0,0,0,0,0, 8);
+        DMA_copy_W.loc = (l1_buffer + 3664);
         DMA_copy_W.number_of_2d_copies = W_tile_size_nof;
         DMA_copy_W.length_1d_copy = W_length_nif_byte;
         dory_dma_memcpy_async(&DMA_copy_W);
         dory_dma_barrier(&DMA_copy_W);
 
-        DMA_copy_k.ext = (uint32_t) l2_W+3456 + 192*_i_nof_load;
-        DMA_copy_k.loc = (uint32_t) l1_buffer + 6040;
+        DMA_copy_k.ext = (uint32_t) l2_W+57600 + 224*_i_nof_load;
+        DMA_copy_k.loc = (uint32_t) l1_buffer + 23832;
         DMA_copy_k.length_1d_copy = (uint16_t) W_tile_size_nof * 8;
         dory_dma_memcpy_async(&DMA_copy_k);
         dory_dma_barrier(&DMA_copy_k);
 
-        DMA_copy_lambda.ext = (uint32_t) l2_W+3648 + 192*_i_nof_load;
-        DMA_copy_lambda.loc = (uint32_t) l1_buffer + 6240;
+        DMA_copy_lambda.ext = (uint32_t) l2_W+58240 + 224*_i_nof_load;
+        DMA_copy_lambda.loc = (uint32_t) l1_buffer + 24064;
         DMA_copy_lambda.length_1d_copy = (uint16_t) W_tile_size_nof * 8;
         dory_dma_memcpy_async(&DMA_copy_lambda);
         dory_dma_barrier(&DMA_copy_lambda);
       }
     // creation of the pointers to input, output, weights, lambda and k
     x = (uint8_t *) (l1_buffer + 0);
-    k = (int64_t *) (l1_buffer + 6040);
-    lambda = (int64_t *) (l1_buffer + 6240);
-    W = (uint8_t *) (l1_buffer + 2576);
-    y = (uint8_t *) (l1_buffer + 1032);
+    k = (int64_t *) (l1_buffer + 23832);
+    lambda = (int64_t *) (l1_buffer + 24064);
+    W = (uint8_t *) (l1_buffer + 3664);
+    y = (uint8_t *) (l1_buffer + 3208);
     p_r = 0;
     p_l = 0;
     p_t = 0;
@@ -192,12 +192,11 @@ void BNReluConvolution4(
       p_t = 1;
     if (_i_w_load == 0)
       p_l = 1;
-    if (_i_h_load == 1-1)
+    if (_i_h_load == 3-1)
       p_b = 1;
-    if (_i_w_load == 1-1)
+    if (_i_w_load == 10-1)
       p_r = 1;
     pi_cl_team_barrier(0);
-    asm volatile("": : :"memory");
     pulp_nn_conv_Ho_parallel(
       x, im2col,
       NULL,
@@ -211,8 +210,8 @@ void BNReluConvolution4(
       1, 1
       );
     pi_cl_team_barrier(0);
-      DMA_copy_y.ext = dory_get_tile_3d(l2_y, _i_h_load, _i_w_load, _i_nof_load, 8, 8, 24, 8, 24, 0, 0, 0, 0, 0, 0, 8);
-      DMA_copy_y.loc = (l1_buffer + 1032);
+      DMA_copy_y.ext = dory_get_tile_3d(l2_y, _i_h_load, _i_w_load, _i_nof_load, 8, 2, 28, 20, 80, 0, 0, 0, 0, 0, 0, 8);
+      DMA_copy_y.loc = (l1_buffer + 3208);
       DMA_copy_y.number_of_2d_copies = y_tile_size_h;
       DMA_copy_y.number_of_1d_copies = y_tile_size_w;
       DMA_copy_y.length_1d_copy = y_length_nof_byte;
@@ -225,11 +224,11 @@ void BNReluConvolution4(
     _i_h_exec = _i_h_load;
     _i_w_exec = _i_w_load;
       _i_w_load += 1;
-      if(_i_w_load==1) 
+      if(_i_w_load==10) 
       {
         _i_w_load = 0;
         _i_h_load += 1;
-        if(_i_h_load==1) 
+        if(_i_h_load==3) 
         {
           _i_h_load = 0;
           _i_nof_load += 1;

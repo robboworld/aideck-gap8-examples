@@ -18,19 +18,16 @@
  * limitations under the License. 
  */
 
-#include "Convolution4.h"
+#include "Convolution5.h"
 #include "pmsis.h"
 #include "dory_get_tile.h"
 #include "dory_dma.h"
 #include "pulp_nn_kernels.h"
-
-void pulp_nn_conv_Ho_parallel_out_32(
-  const uint8_t *, int32_t *, const int8_t *, const int32_t *,
-  uint16_t, uint16_t, uint16_t, uint16_t, uint16_t, uint16_t,
-  uint16_t, uint16_t, uint16_t, uint16_t);
+void pulp_nn_pointwise_HoWo_parallel_32();
+void pulp_nn_conv_Ho_parallel_int32();
 
 
-void Convolution4(
+void Convolution5(
   void *args
 ) {
   //////////////////////////////////////////////////////////////////////////
@@ -48,6 +45,7 @@ void Convolution4(
   unsigned int hyperram =(unsigned int)  real_arg[8];
   unsigned int out_mult_in =(unsigned int)  real_arg[9];
   unsigned int out_shift_in = (unsigned int) real_arg[10];
+  uint16_t out_mult = out_mult_in;
 
   /////////////////////
   // DMA declaration //
@@ -202,11 +200,18 @@ void Convolution4(
     if (_i_w_load == 10-1)
       p_r = 1;
     pi_cl_team_barrier(0);
-    pulp_nn_conv_Ho_parallel_out_32(
-      x, (int32_t *) y, (const int8_t *) W, (const int32_t *) b,
+    pulp_nn_conv_Ho_parallel_int32(
+      x, im2col,
+      (const int32_t *) b,
+      (int32_t *) y, W,
+      0, 0,
+      out_mult, out_shift,
       x_tile_size_w, x_tile_size_h, x_tile_size_nif,
       y_tile_size_w, y_tile_size_h, y_tile_size_nof,
-      p_t, p_b, p_l, p_r);
+      3, 3,
+      p_t, p_b, p_l, p_r, 1, 1,
+      0, 0
+      );
     pi_cl_team_barrier(0);
       DMA_copy_y.ext = dory_get_tile_3d(l2_y, _i_h_load, _i_w_load, _i_nof_load, 8, 2, 24, 20, 24, 0, 0, 0, 0, 0, 0, 32);
       DMA_copy_y.loc = (l1_buffer + 3208);

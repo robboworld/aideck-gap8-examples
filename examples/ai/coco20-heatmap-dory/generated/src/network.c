@@ -26,10 +26,10 @@
 #include "embedded_weights.h"
 #include <string.h>
 #include "BNReluConvolution0.h"
+#include "BNReluConvolution1.h"
 #include "BNReluConvolution2.h"
 #include "BNReluConvolution3.h"
-#include "Convolution4.h"
-#include "BNReluConvolution1.h"
+#include "BNReluConvolution4.h"
 
 
 #define VERBOSE 0
@@ -93,7 +93,7 @@ void network_initialize() {
   printf("\nL3 Buffer alloc initial\t@ %d:\t%s\n", (unsigned int)L3_output, L3_output?"Ok":"Failed");
 #endif
 
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 6; i++) {
     L3_weights_size[i] = weights_size[i];
   }
 }
@@ -124,7 +124,7 @@ void execute_layer_fork(void *args) {
       pi_cl_team_fork(NUM_CORES, (void *)BNReluConvolution3, args);
       break;
     case 4:
-      pi_cl_team_fork(NUM_CORES, (void *)Convolution4, args);
+      pi_cl_team_fork(NUM_CORES, (void *)BNReluConvolution4, args);
       break;
   }
 
@@ -153,7 +153,7 @@ struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_siz
   /* Apply the cluster clock only after pi_cluster_open(): doing it earlier
    * stalls this board's FLL/CPX bring-up. */
   if (!cluster_frequency_configured) {
-    pi_freq_set(PI_FREQ_DOMAIN_CL, 175000000);
+    pi_freq_set(PI_FREQ_DOMAIN_CL, 250000000);
     cluster_frequency_configured = 1;
   }
   // Then offload an entry point, this will get executed on the cluster controller
@@ -231,7 +231,7 @@ void network_run_cluster(void *args) {
 /* -------- SECTION 2 BEGIN --------- */
 /* ---------------------------------- */
   int weight_l_cnt = 0; // count how many layers with weights we have processed to increment the weights_L3 pointer
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 6; i++) {
 /* MEMORY ALLOCATION
   - allocate memory if layer is executed from L3;
   - allocate weights
@@ -287,15 +287,15 @@ void network_run_cluster(void *args) {
     pi_perf_start();
     execute_layer_fork((void *) &largs);
 
-    /* After the four generated backbone layers, run the final int32 head
-     * directly across the eight cluster cores.  The stock DORY layer-4 path
-     * uses a DMA/tiling worker sequence that is unstable on this board. */
-    if (i == 3) {
+    /* After five backbone/refine layers (E37: refinement_blocks=2), run the
+     * final int32 head on the cluster. Stock DORY head tiling is unstable on
+     * this board OTA path. Weight offset = sum(weights_size[0:5]). */
+    if (i == 4) {
       unsigned int head_args[4];
       head_args[0] = (unsigned int)L2_output;
       head_args[1] = (unsigned int)l2_final_output;
-      head_args[2] = (unsigned int)((uint8_t *)L3_weights + 102800);
-      head_args[3] = (unsigned int)((uint8_t *)L3_weights + 102800 + 17280);
+      head_args[2] = (unsigned int)((uint8_t *)L3_weights + 161680);
+      head_args[3] = (unsigned int)((uint8_t *)L3_weights + 161680 + 17280);
       pi_cl_team_fork(NUM_CORES, detector_head_cluster, head_args);
       pi_perf_stop();
       cycle_network_execution += pi_perf_read(PI_PERF_CYCLES);
@@ -321,7 +321,7 @@ void network_run_cluster(void *args) {
     if (L3_output_layers[i]==1) {
       printf("Output in L3. Expected checksum: %d\n", activations_out_checksum[i][exec]);
     } else {
-      checksum(i + 1 < 5 ? "L2 output" : "final output",
+      checksum(i + 1 < 6 ? "L2 output" : "final output",
                L2_output, activations_out_size[i], activations_out_checksum[i][exec]);
     }
     printf("\n");
@@ -335,7 +335,7 @@ void network_run_cluster(void *args) {
       dfree(bypass_dimension, dir);
     L2_input = L2_output;
     // Residual connections
-    if (i < 4) {
+    if (i < 5) {
       if (branch_input[i+1] == 1) {
         bypass_activations = dmalloc(bypass_dimension, !dir);
         residual_number--;
@@ -375,8 +375,8 @@ void network_run_cluster(void *args) {
   }
 
 
-  //memcpy(L2_output, l2_final_output, activations_out_size[4]); // BUGGY!
-  for (int i=0; i<activations_out_size[4]; i++)
+  //memcpy(L2_output, l2_final_output, activations_out_size[5]); // BUGGY!
+  for (int i=0; i<activations_out_size[5]; i++)
     *((uint8_t*)(l2_final_output+i)) = *((uint8_t*)(L2_output+i));
 /* ---------------------------------- */
 /* --------- SECTION 2 END ---------- */

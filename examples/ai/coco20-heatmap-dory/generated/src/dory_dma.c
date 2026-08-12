@@ -61,22 +61,7 @@ void dory_dma_memcpy_1d_async(DMA_copy *copy) {
 }
 
 void dory_dma_memcpy_2d_async(DMA_copy *copy) {
-  if (pi_core_id() != 0) return;
-  uint8_t *external = (uint8_t *)copy->ext;
-  uint8_t *local = (uint8_t *)copy->loc;
-  if (copy->number_of_2d_copies == 1) {
-    for (unsigned int row = 0; row < copy->number_of_1d_copies; ++row) {
-      copy_blocking(external + row * copy->stride_1d,
-                    local + row * copy->length_1d_copy,
-                    copy->length_1d_copy, copy->dir);
-    }
-  } else {
-    const unsigned int block = copy->number_of_1d_copies * copy->length_1d_copy;
-    for (unsigned int plane = 0; plane < copy->number_of_2d_copies; ++plane) {
-      copy_blocking(external + plane * copy->stride_2d, local + plane * block,
-                    block, copy->dir);
-    }
-  }
+  dory_dma_memcpy_3d_async(copy);
 }
 
 void dory_dma_memcpy_3d_async(DMA_copy *copy) {
@@ -85,25 +70,40 @@ void dory_dma_memcpy_3d_async(DMA_copy *copy) {
   }
   uint8_t *external = (uint8_t *)copy->ext;
   uint8_t *local = (uint8_t *)copy->loc;
-  const unsigned int block = copy->number_of_1d_copies * copy->length_1d_copy;
-  /* Match DORY's original MCHAN 3D transfer: each plane is one contiguous
-   * local block, while only its L2 start uses stride_2d. */
-  for (unsigned int plane = 0; plane < copy->number_of_2d_copies; ++plane) {
-    copy_blocking(external + plane * copy->stride_2d, local + plane * block,
-                  block, copy->dir);
+  for (
+    unsigned int plane = 0;
+    plane < copy->number_of_2d_copies;
+    ++plane
+  ) {
+    for (
+      unsigned int row = 0;
+      row < copy->number_of_1d_copies;
+      ++row
+    ) {
+      uint8_t *external_row =
+        external + plane * copy->stride_2d + row * copy->stride_1d;
+      uint8_t *local_row =
+        local +
+        (plane * copy->number_of_1d_copies + row) *
+        copy->length_1d_copy;
+      copy_blocking(
+        external_row,
+        local_row,
+        copy->length_1d_copy,
+        copy->dir
+      );
+    }
   }
 }
 
 void dory_dma_memcpy_async(DMA_copy *copy) {
   if (copy->hwc_to_chw) {
     dory_dma_memcpy_hwc_to_chw(copy);
-  } else if ((copy->number_of_2d_copies == 1 && copy->number_of_1d_copies == 1) ||
-             (copy->stride_1d == copy->length_1d_copy &&
-              copy->number_of_1d_copies * copy->length_1d_copy == copy->stride_2d) ||
-             (copy->number_of_2d_copies == 1 && copy->length_1d_copy == copy->stride_1d)) {
+  } else if (
+    copy->number_of_2d_copies == 1 &&
+    copy->number_of_1d_copies == 1
+  ) {
     dory_dma_memcpy_1d_async(copy);
-  } else if (copy->number_of_2d_copies == 1 || copy->length_1d_copy == copy->stride_1d) {
-    dory_dma_memcpy_2d_async(copy);
   } else {
     dory_dma_memcpy_3d_async(copy);
   }

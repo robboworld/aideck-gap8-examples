@@ -16,10 +16,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef __POOLING3_H__
-#define __POOLING3_H__
+#ifndef __CONVOLUTION5_H__
+#define __CONVOLUTION5_H__
 
-void  Pooling3(
+void  Convolution5(
   void *args
 );
 

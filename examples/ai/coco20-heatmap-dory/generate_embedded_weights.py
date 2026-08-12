@@ -6,7 +6,7 @@ root = Path(__file__).resolve().parent
 files = [
     "BNReluConvolution0_weights.hex", "BNReluConvolution1_weights.hex",
     "BNReluConvolution2_weights.hex", "BNReluConvolution3_weights.hex",
-    "Convolution4_weights.hex",
+    "BNReluConvolution4_weights.hex", "Convolution5_weights.hex",
 ]
 payload = b"".join((root / "generated" / "hex" / name).read_bytes() for name in files)
 header = """#ifndef COCO20_EMBEDDED_WEIGHTS_H\n#define COCO20_EMBEDDED_WEIGHTS_H\n#include <stdint.h>\n#include <stddef.h>\nextern const uint8_t coco20_dory_weights[];\nextern const size_t coco20_dory_weights_len;\n#endif\n"""
