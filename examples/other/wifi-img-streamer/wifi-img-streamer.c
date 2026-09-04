@@ -208,18 +208,21 @@ void camera_task(void *parameters)
   cpxPrintToConsole(LOG_TO_CRTP, "Starting camera task...\n");
   uint32_t resolution = CAM_WIDTH * CAM_HEIGHT;
   uint32_t captureSize = resolution * sizeof(unsigned char);
+  cpxPrintToConsole(LOG_TO_CRTP, "streamer alloc...\n");
   imgBuff = (unsigned char *)pmsis_l2_malloc(captureSize);
   if (imgBuff == NULL)
   {
     cpxPrintToConsole(LOG_TO_CRTP, "Failed to allocate Memory for Image \n");
     return;
   }
+  cpxPrintToConsole(LOG_TO_CRTP, "streamer alloc ok, himax open...\n");
 
   if (open_pi_camera_himax(&camera))
   {
     cpxPrintToConsole(LOG_TO_CRTP, "Failed to open camera\n");
     return;
   }
+  cpxPrintToConsole(LOG_TO_CRTP, "streamer camera opened, jpeg...\n");
 
   struct jpeg_encoder_conf enc_conf;
   jpeg_encoder_conf_init(&enc_conf);

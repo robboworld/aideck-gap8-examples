@@ -321,11 +321,16 @@ void com_read(packet_t *p)
   xQueueReceive(rxq, p, (TickType_t)portMAX_DELAY);
 }
 
-void com_write(packet_t *p)
+int com_write(packet_t *p)
 {
   start = xTaskGetTickCount();
-  //printf("Will queue up packet\n");
-  xQueueSend(txq, p, (TickType_t)portMAX_DELAY);
-  //printf("Have queued up packet!\n");
+  /* Never block forever: if ESP32 stops draining (TCP client gone), an infinite
+   * wait here freezes the camera/JPEG task and kills subsequent reconnects. */
+  if (xQueueSend(txq, p, pdMS_TO_TICKS(200)) != pdPASS)
+  {
+    DEBUG_PRINTF("TX Queue full, drop packet\n");
+    return -1;
+  }
   xEventGroupSetBits(evGroup, TX_QUEUE_BIT);
+  return 0;
 }

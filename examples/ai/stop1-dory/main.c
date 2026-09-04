@@ -52,11 +52,14 @@ extern int cycle_network_execution;
 #ifndef DETECTOR_EVERY_N
 #define DETECTOR_EVERY_N 4
 #endif
+#ifndef DETECTOR_IDLE_EVERY_N
+#define DETECTOR_IDLE_EVERY_N 50
+#endif
 #ifndef DETECTOR_START_FRAME
-#define DETECTOR_START_FRAME 60
+#define DETECTOR_START_FRAME 8
 #endif
 #ifndef DETECTOR_SPAWN_FRAME
-#define DETECTOR_SPAWN_FRAME 50
+#define DETECTOR_SPAWN_FRAME 8
 #endif
 #if defined(STOP1_INPUT_STATIC)
 #define STOP1_USE_CAMERA 0
@@ -81,6 +84,7 @@ typedef enum {
 } __attribute__((packed)) StreamerMode_t;
 
 static int wifiClientConnected = 0;
+static volatile uint8_t wifi_client_needs_route;
 static CPXPacket_t rxp;
 static CPXPacket_t txp;
 
@@ -121,6 +125,9 @@ static void rx_task(void *parameters) {
         cpxPrintToConsole(LOG_TO_CRTP, "Wifi client connection status: %u\n",
                           wifiCtrl->data[0]);
         wifiClientConnected = wifiCtrl->data[0];
+        if (wifiClientConnected == 1) {
+          wifi_client_needs_route = 1;
+        }
         break;
       default:
         break;
@@ -168,20 +175,33 @@ static void createImageHeaderPacket(CPXPacket_t *packet, uint32_t imgSize,
   packet->dataLength = sizeof(img_header_t);
 }
 
-static void sendBufferViaCPX(CPXPacket_t *packet, uint8_t *buf,
+static int sendBufferViaCPX(CPXPacket_t *packet, uint8_t *buf,
                              uint32_t bufferSize) {
   uint32_t offset = 0;
   uint32_t size = 0;
   do {
+    if (wifiClientConnected != 1) {
+      return -1;
+    }
     size = sizeof(packet->data);
     if (offset + size > bufferSize) {
       size = bufferSize - offset;
     }
     memcpy(packet->data, &buf[offset], size);
     packet->dataLength = size;
-    cpxSendPacketBlocking(packet);
+    if (!cpxSendPacket(packet, 200)) {
+      return -1;
+    }
     offset += size;
   } while (size == sizeof(packet->data));
+  return 0;
+}
+
+static int send_cpx_or_abort(CPXPacket_t *packet) {
+  if (wifiClientConnected != 1) {
+    return -1;
+  }
+  return cpxSendPacket(packet, 200) ? 0 : -1;
 }
 
 static int open_pi_camera_himax(struct pi_device *device) {
@@ -261,56 +281,97 @@ static void report_stop1(const int32_t *output) {
     stop1_temporal_hits = 0;
   }
   const int present = (stop1_temporal_hits >= STOP1_TEMPORAL_REQUIRED);
-  /* One short line — CRTP console may split long prints mid-field. */
+  /* Keep this short — CRTP splits long CPX console lines mid-field. */
+  (void)best_obj;
+  (void)best_cls;
+  (void)instant;
   cpxPrintToConsole(
       LOG_TO_CRTP,
-      "stop1 present=%d raw=%d hit=%d/%d obj=%ld cls=%ld score=%ld thr=%ld cell=%d,%d box=%ld,%ld,%ld,%ld cycles=%d\n",
-      present, instant, stop1_temporal_hits, STOP1_TEMPORAL_REQUIRED,
-      (long)best_obj, (long)best_cls, (long)best_score, (long)STOP1_PRESENT_RAW_MIN,
-      best_col, best_row, (long)box[0], (long)box[1], (long)box[2], (long)box[3],
+      "stop1 present=%d score=%ld cell=%d,%d box=%ld,%ld,%ld,%ld cycles=%d\n",
+      present, (long)best_score, best_col, best_row,
+      (long)box[0], (long)box[1], (long)box[2], (long)box[3],
       cycle_network_execution);
 }
 
 #if STOP1_USE_CAMERA && !defined(STOP1_STREAM_ONLY)
-static TaskHandle_t inferTaskHandle;
 static volatile uint8_t infer_dory_ready;
-/* Snapshot for inference — allocated only after camera/JPEG buffers succeed. */
-static uint8_t *infer_frame_copy;
+static volatile uint8_t camera_busy;
+static uint8_t *infer_arena;
+static uint32_t infer_seq;
+static TaskHandle_t detectorTaskHandle;
 
-static void infer_task(void *parameters) {
-  (void)parameters;
-  uint8_t *arena = (uint8_t *)pi_l2_malloc(L2_ARENA_BYTES);
-  if (arena == NULL) {
-    cpxPrintToConsole(LOG_TO_CRTP, "stop1 infer: L2 arena alloc failed\n");
-    vTaskDelete(NULL);
+static void stop1_preprocess_from_img(void) {
+  const uint8_t *pre_src = imgBuff;
+  if (imgBuff == infer_arena) {
+    uint8_t *cam_scratch = infer_arena + L2_ARENA_BYTES - CAMERA_BYTES;
+    memcpy(cam_scratch, imgBuff, CAMERA_BYTES);
+    pre_src = cam_scratch;
+  }
+  preprocess(pre_src, infer_arena);
+}
+
+static int stop1_capture_and_preprocess(void) {
+  pi_camera_capture_async(&camera, imgBuff, CAM_WIDTH * CAM_HEIGHT,
+                          pi_task_callback(&task1, capture_done_cb, NULL));
+  pi_camera_control(&camera, PI_CAMERA_CMD_START, 0);
+  xEventGroupWaitBits(evGroup, CAPTURE_DONE_BIT, pdTRUE, pdFALSE,
+                      (TickType_t)portMAX_DELAY);
+  pi_camera_control(&camera, PI_CAMERA_CMD_STOP, 0);
+  stop1_preprocess_from_img();
+  return 0;
+}
+
+/* letter20 pattern: network_run + report on the calling task (deep stack). */
+static void stop1_run_infer_sync(void) {
+  if (!infer_dory_ready || infer_arena == NULL) {
     return;
   }
-  network_initialize();
-  infer_dory_ready = 1;
-  cpxPrintToConsole(LOG_TO_CRTP, "stop1 DORY ready\n");
+  int32_t *head_output =
+      (int32_t *)(infer_arena + L2_ARENA_BYTES -
+                  GRID * GRID * HEAD_CHANNELS * sizeof(int32_t));
+  network_run(infer_arena, L2_ARENA_BYTES, head_output, 0, 1);
+  infer_seq += 1;
+  if ((infer_seq % REPORT_EVERY) == 0) {
+    report_stop1(head_output);
+  }
+}
+
+static void stop1_detector_task(void *parameters) {
+  (void)parameters;
+  unsigned infer_idx = 0;
+  vTaskDelay(pdMS_TO_TICKS(6000));
+  cpxPrintToConsole(LOG_TO_CRTP, "stop1 detector task running\n");
   while (1) {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    if (imgBuff == NULL || infer_frame_copy == NULL) {
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    if (wifiClientConnected == 1) {
       continue;
     }
-    memcpy(infer_frame_copy, imgBuff, CAMERA_BYTES);
-    int32_t *head_output =
-        (int32_t *)(arena + L2_ARENA_BYTES -
-                    GRID * GRID * HEAD_CHANNELS * sizeof(int32_t));
-    const uint32_t t0 = pi_time_get_us();
-    preprocess(infer_frame_copy, arena);
-    const uint32_t t_preprocess = pi_time_get_us();
-    network_run(arena, L2_ARENA_BYTES, head_output, 0, 1);
-    const uint32_t t_inference = pi_time_get_us();
-    cpxPrintToConsole(
-        LOG_TO_CRTP,
-        "stop1 timing us: capture=0 stream=0 preprocess=%lu inference=%lu "
-        "camera_to_result=%lu\n",
-        (unsigned long)(t_preprocess - t0),
-        (unsigned long)(t_inference - t_preprocess),
-        (unsigned long)(t_inference - t0));
-    report_stop1(head_output);
+    if (!infer_dory_ready || infer_arena == NULL || camera_busy) {
+      continue;
+    }
+    infer_idx += 1;
+    if (infer_idx < DETECTOR_START_FRAME ||
+        (infer_idx % DETECTOR_EVERY_N) != 0) {
+      continue;
+    }
+    camera_busy = 1;
+    stop1_capture_and_preprocess();
+    stop1_run_infer_sync();
+    camera_busy = 0;
     pi_time_wait_us(DETECTOR_PERIOD_US);
+  }
+}
+
+static void stop1_spawn_detector_task(void) {
+  if (detectorTaskHandle != NULL) {
+    return;
+  }
+  if (xTaskCreate(stop1_detector_task, "detector_task",
+                  configMINIMAL_STACK_SIZE * 24, NULL, tskIDLE_PRIORITY + 1,
+                  &detectorTaskHandle) == pdPASS) {
+    cpxPrintToConsole(LOG_TO_CRTP, "stop1 detector task spawned\n");
+  } else {
+    cpxPrintToConsole(LOG_TO_CRTP, "stop1 detector task spawn failed\n");
   }
 }
 #endif
@@ -323,8 +384,6 @@ static void camera_task(void *parameters) {
 
 #ifdef SETUP_WIFI_AP
   setupWiFi();
-  /* Restore APP route after WiFi-CTRL commands (same as coco20 / wifi-img-streamer). */
-  cpxInitRoute(CPX_T_GAP8, CPX_T_WIFI_HOST, CPX_F_APP, &txp.route);
 #endif
 
 #if STOP1_USE_CAMERA
@@ -332,22 +391,25 @@ static void camera_task(void *parameters) {
   uint32_t resolution = CAM_WIDTH * CAM_HEIGHT;
   uint32_t captureSize = resolution * sizeof(unsigned char);
 
-  cpxPrintToConsole(LOG_TO_CRTP, "stop1 stream alloc...\n");
-  imgBuff = (unsigned char *)pmsis_l2_malloc(captureSize);
-  if (imgBuff == NULL) {
-    cpxPrintToConsole(LOG_TO_CRTP, "Failed to allocate Memory for Image \n");
+#if !defined(STOP1_STREAM_ONLY)
+  /* Alloc + DORY init BEFORE Himax/JPEG so L2 is freer. Calling
+   * network_initialize after the stream is up previously crashed GAP8. */
+  if (captureSize > L2_ARENA_BYTES) {
+    cpxPrintToConsole(LOG_TO_CRTP, "stop1 stream alloc failed (frame too large)\n");
     return;
   }
-  cpxPrintToConsole(LOG_TO_CRTP, "stop1 stream alloc ok\n");
-
-#if !defined(STOP1_STREAM_ONLY)
-  infer_frame_copy = (uint8_t *)pmsis_l2_malloc(CAMERA_BYTES);
-  if (infer_frame_copy == NULL) {
-    cpxPrintToConsole(LOG_TO_CRTP,
-                      "stop1 infer frame alloc failed — stream-only mode\n");
-  } else {
-    cpxPrintToConsole(LOG_TO_CRTP, "stop1 infer frame ok\n");
+  infer_arena = (uint8_t *)pmsis_l2_malloc(L2_ARENA_BYTES);
+  if (infer_arena == NULL) {
+    cpxPrintToConsole(LOG_TO_CRTP, "stop1 infer arena alloc failed\n");
+    return;
   }
+  imgBuff = infer_arena;
+  cpxPrintToConsole(LOG_TO_CRTP, "stop1 infer arena ok\n");
+  cpxPrintToConsole(LOG_TO_CRTP, "stop1 network_initialize...\n");
+  network_initialize();
+  infer_dory_ready = 1;
+  cpxPrintToConsole(LOG_TO_CRTP, "stop1 DORY ready sync\n");
+  stop1_spawn_detector_task();
 #endif
 
   cpxPrintToConsole(LOG_TO_CRTP, "stop1 opening himax\n");
@@ -356,6 +418,16 @@ static void camera_task(void *parameters) {
     return;
   }
   cpxPrintToConsole(LOG_TO_CRTP, "stop1 camera opened\n");
+
+  cpxPrintToConsole(LOG_TO_CRTP, "stop1 stream alloc...\n");
+#if defined(STOP1_STREAM_ONLY)
+  imgBuff = (unsigned char *)pmsis_l2_malloc(captureSize);
+  if (imgBuff == NULL) {
+    cpxPrintToConsole(LOG_TO_CRTP, "Failed to allocate Memory for Image \n");
+    return;
+  }
+#endif
+  cpxPrintToConsole(LOG_TO_CRTP, "stop1 stream alloc ok\n");
 
   if (streamerMode == JPEG_ENCODING) {
     struct jpeg_encoder_conf enc_conf;
@@ -387,12 +459,22 @@ static void camera_task(void *parameters) {
   }
 
   pi_camera_control(&camera, PI_CAMERA_CMD_STOP, 0);
+  cpxInitRoute(CPX_T_GAP8, CPX_T_WIFI_HOST, CPX_F_APP, &txp.route);
   cpxPrintToConsole(LOG_TO_CRTP, "stop1 stream loop (jpeg)\n");
 
   while (1) {
-    /* Do not gate on wifiClientConnected: ESP32 join/leave CPX events are
-     * often missed; TCP clients on SoftAP never receive frames otherwise. */
-    {
+    if (wifiClientConnected == 1) {
+      if (wifi_client_needs_route) {
+        wifi_client_needs_route = 0;
+        cpxInitRoute(CPX_T_GAP8, CPX_T_WIFI_HOST, CPX_F_APP, &txp.route);
+        cpxPrintToConsole(LOG_TO_CRTP, "stop1 APP route refresh\n");
+      }
+#if !defined(STOP1_STREAM_ONLY)
+      while (camera_busy) {
+        vTaskDelay(1);
+      }
+      camera_busy = 1;
+#endif
       const uint32_t t0 = pi_time_get_us();
       pi_camera_capture_async(&camera, imgBuff, resolution,
                               pi_task_callback(&task1, capture_done_cb, NULL));
@@ -400,47 +482,55 @@ static void camera_task(void *parameters) {
       xEventGroupWaitBits(evGroup, CAPTURE_DONE_BIT, pdTRUE, pdFALSE,
                           (TickType_t)portMAX_DELAY);
       pi_camera_control(&camera, PI_CAMERA_CMD_STOP, 0);
+#if !defined(STOP1_STREAM_ONLY)
+      camera_busy = 0;
+#endif
       const uint32_t t_capture = pi_time_get_us();
 
       if (streamerMode == JPEG_ENCODING) {
         jpeg_encoder_process(&jpeg_encoder, &buffer, &jpeg_data, &jpegSize);
         uint32_t imgSize = headerSize + jpegSize + footerSize;
         createImageHeaderPacket(&txp, imgSize, JPEG_ENCODING);
-        cpxSendPacketBlocking(&txp);
+        if (send_cpx_or_abort(&txp) != 0) {
+          continue;
+        }
         memcpy(txp.data, header.data, headerSize);
         txp.dataLength = headerSize;
-        cpxSendPacketBlocking(&txp);
-        sendBufferViaCPX(&txp, (uint8_t *)jpeg_data.data, jpegSize);
+        if (send_cpx_or_abort(&txp) != 0) {
+          continue;
+        }
+        if (sendBufferViaCPX(&txp, (uint8_t *)jpeg_data.data, jpegSize) != 0) {
+          continue;
+        }
         memcpy(txp.data, footer.data, footerSize);
         txp.dataLength = footerSize;
-        cpxSendPacketBlocking(&txp);
+        if (send_cpx_or_abort(&txp) != 0) {
+          continue;
+        }
       } else {
         createImageHeaderPacket(&txp, captureSize, RAW_ENCODING);
-        cpxSendPacketBlocking(&txp);
-        sendBufferViaCPX(&txp, imgBuff, captureSize);
+        if (send_cpx_or_abort(&txp) != 0) {
+          continue;
+        }
+        if (sendBufferViaCPX(&txp, imgBuff, captureSize) != 0) {
+          continue;
+        }
       }
       const uint32_t t_stream = pi_time_get_us();
 
 #if !defined(STOP1_STREAM_ONLY)
-      if (infer_frame_copy != NULL && inferTaskHandle == NULL &&
-          frame >= DETECTOR_SPAWN_FRAME) {
-        if (xTaskCreate(infer_task, "infer_task", configMINIMAL_STACK_SIZE * 8,
-                        NULL, tskIDLE_PRIORITY, &inferTaskHandle) == pdPASS) {
-          cpxPrintToConsole(LOG_TO_CRTP, "stop1 infer task spawned\n");
-        } else {
-          cpxPrintToConsole(LOG_TO_CRTP, "stop1 infer task spawn failed\n");
-        }
-      }
-      if (infer_dory_ready && inferTaskHandle != NULL &&
-          infer_frame_copy != NULL && frame >= DETECTOR_START_FRAME &&
+      if (infer_dory_ready && frame >= DETECTOR_START_FRAME &&
           (frame % DETECTOR_EVERY_N) == 0) {
-        xTaskNotifyGive(inferTaskHandle);
+        camera_busy = 1;
+        stop1_preprocess_from_img();
+        stop1_run_infer_sync();
+        camera_busy = 0;
       }
 #else
       (void)t_capture;
       (void)t_stream;
 #endif
-      if (frame % 30 == 0) {
+      if (frame % 300 == 0) {
         cpxPrintToConsole(
             LOG_TO_CRTP,
             "stop1 stream capture=%lu stream=%lu bytes=%lu\n",
@@ -451,6 +541,14 @@ static void camera_task(void *parameters) {
                                 : captureSize));
       }
       ++frame;
+    } else {
+#if !defined(STOP1_STREAM_ONLY)
+      /* Idle path: ensure detector is running when no JPEG client. */
+      if (infer_dory_ready) {
+        stop1_spawn_detector_task();
+      }
+#endif
+      vTaskDelay(10);
     }
 #else
     uint8_t *arena = NULL;
@@ -529,7 +627,7 @@ static void start_example(void) {
     pmsis_exit(-1);
   }
 
-  xTask = xTaskCreate(camera_task, "camera_task", configMINIMAL_STACK_SIZE * 4,
+  xTask = xTaskCreate(camera_task, "camera_task", configMINIMAL_STACK_SIZE * 24,
                       NULL, tskIDLE_PRIORITY + 1, NULL);
   if (xTask != pdPASS) {
     cpxPrintToConsole(LOG_TO_CRTP, "Camera task did not start !\n");
@@ -537,7 +635,7 @@ static void start_example(void) {
   }
 
   xTask = xTaskCreate(rx_task, "rx_task", configMINIMAL_STACK_SIZE * 2, NULL,
-                      tskIDLE_PRIORITY + 1, NULL);
+                      tskIDLE_PRIORITY + 3, NULL);
   if (xTask != pdPASS) {
     cpxPrintToConsole(LOG_TO_CRTP, "RX task did not start !\n");
     pmsis_exit(-1);

@@ -37,4 +37,5 @@ void com_init();
 
 void com_read(packet_t * p);
 
-void com_write(packet_t * p);
+/* Queue a packet for SPI TX. Returns 0 on success, -1 if TX queue stays full. */
+int com_write(packet_t * p);

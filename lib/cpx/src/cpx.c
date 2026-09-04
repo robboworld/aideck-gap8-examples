@@ -91,11 +91,19 @@ void cpxSendPacketBlocking(const CPXPacket_t * packet) {
   txpPacked.route.version = packet->route.version;
   txpPacked.route.lastPacket = packet->route.lastPacket;
   memcpy(txpPacked.data, packet->data, packet->dataLength);
-  com_write((packet_t*)&txpPacked);
+  (void)com_write((packet_t*)&txpPacked);
 }
 
 bool cpxSendPacket(const CPXPacket_t * packet, uint32_t timeout) {
-  return true;
+  (void)timeout;
+  txpPacked.wireLength = packet->dataLength + CPX_HEADER_SIZE;
+  txpPacked.route.destination = packet->route.destination;
+  txpPacked.route.source = packet->route.source;
+  txpPacked.route.function = packet->route.function;
+  txpPacked.route.version = packet->route.version;
+  txpPacked.route.lastPacket = packet->route.lastPacket;
+  memcpy(txpPacked.data, packet->data, packet->dataLength);
+  return com_write((packet_t*)&txpPacked) == 0;
 }
 
 static CPXPacket_t consoleTx;
