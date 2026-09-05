@@ -67,7 +67,7 @@ static int open_pi_camera_himax(struct pi_device *device)
 
   // rotate image
   pi_camera_control(device, PI_CAMERA_CMD_START, 0);
-  uint8_t set_value = 3;
+  uint8_t set_value = 3; /* H+V: upright SoftAP stream on this deck mount */
   uint8_t reg_value;
   pi_camera_reg_set(device, IMG_ORIENTATION, &set_value);
   pi_time_wait_us(1000000);

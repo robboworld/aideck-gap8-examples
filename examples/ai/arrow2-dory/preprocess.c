@@ -8,6 +8,65 @@
 #define CENTER_CROP_X \
   ((ARROW2_CAMERA_WIDTH - CENTER_CROP_SIZE) / 2)
 
+/* Must match tinyml_demo.arrow2.contrast_stretch_u8 */
+#define CONTRAST_LO_PCT 2
+#define CONTRAST_HI_PCT 98
+
+static void contrast_stretch_u8(uint8_t *patch, int n) {
+  uint32_t hist[256];
+  uint32_t total;
+  uint32_t lo_count;
+  uint32_t hi_count;
+  uint32_t seen;
+  int lo;
+  int hi;
+  int i;
+  int value;
+
+  for (i = 0; i < 256; ++i) {
+    hist[i] = 0;
+  }
+  for (i = 0; i < n; ++i) {
+    hist[patch[i]]++;
+  }
+  total = (uint32_t)n;
+  lo_count = (total * (uint32_t)CONTRAST_LO_PCT) / 100u;
+  hi_count = (total * (uint32_t)CONTRAST_HI_PCT) / 100u;
+  if (hi_count <= lo_count) {
+    hi_count = lo_count + 1u;
+  }
+  lo = 0;
+  hi = 255;
+  seen = 0;
+  for (value = 0; value < 256; ++value) {
+    seen += hist[value];
+    if (seen > lo_count) {
+      lo = value;
+      break;
+    }
+  }
+  seen = 0;
+  for (value = 0; value < 256; ++value) {
+    seen += hist[value];
+    if (seen >= hi_count) {
+      hi = value;
+      break;
+    }
+  }
+  if (hi <= lo) {
+    return;
+  }
+  for (i = 0; i < n; ++i) {
+    int32_t stretched = ((int32_t)patch[i] - lo) * 255 / (hi - lo);
+    if (stretched < 0) {
+      stretched = 0;
+    } else if (stretched > 255) {
+      stretched = 255;
+    }
+    patch[i] = (uint8_t)stretched;
+  }
+}
+
 int arrow2_preprocess(
   const uint8_t *camera_frame,
   uint8_t *model_input
@@ -33,6 +92,7 @@ int arrow2_preprocess(
         camera_frame[source_y * ARROW2_CAMERA_WIDTH + source_x];
     }
   }
+  contrast_stretch_u8(model_input, ARROW2_INPUT_BYTES);
   return 0;
 }
 
@@ -41,17 +101,12 @@ int arrow2_input_analyze(
   arrow2_input_stats_t *stats
 ) {
   /*
-   * Training domain: bright filled arrow on dark background, roughly centered.
-   * Thresholds match main.c blank gate used to kill empty-room "right" spam.
+   * Diagnostic stats only. Classification of empty scenes is handled by the
+   * 3-class CNN (left/right/empty); do not reject frames here.
    */
   enum {
     DARK_MAX = 80,
     BRIGHT_MIN = 180,
-    MIN_DARK = 520,
-    MIN_BRIGHT = 70,
-    MAX_BRIGHT = 420,
-    MIN_RANGE = 120,
-    MAX_MEAN = 95,
     BORDER = 5
   };
   uint32_t dark = 0;
@@ -62,7 +117,6 @@ int arrow2_input_analyze(
   uint8_t mx = 0;
   int y;
   int x;
-  const char *reject = NULL;
 
   if (stats != NULL) {
     stats->mean = 0;
@@ -70,13 +124,13 @@ int arrow2_input_analyze(
     stats->dark = 0;
     stats->bright = 0;
     stats->bright_center = 0;
-    stats->reject = "null";
+    stats->reject = "ok";
   }
   if (model_input == NULL) {
     if (stats != NULL) {
       stats->reject = "null";
     }
-    return 1;
+    return 0;
   }
 
   for (y = 0; y < ARROW2_INPUT_HEIGHT; ++y) {
@@ -111,24 +165,8 @@ int arrow2_input_analyze(
     stats->dark = (uint16_t)dark;
     stats->bright = (uint16_t)bright;
     stats->bright_center = (uint16_t)bright_center;
+    stats->reject = "ok";
   }
-
-  if (sum / ARROW2_INPUT_BYTES > MAX_MEAN) {
-    reject = "mean"; /* scene too bright — need dark bg */
-  } else if ((uint32_t)(mx - mn) < MIN_RANGE) {
-    reject = "range"; /* low contrast */
-  } else if (dark < MIN_DARK) {
-    reject = "dark"; /* not enough dark background pixels */
-  } else if (bright < MIN_BRIGHT) {
-    reject = "bri_lo"; /* arrow too small / dim */
-  } else if (bright > MAX_BRIGHT) {
-    reject = "bri_hi"; /* too much bright (window/paper flood) */
-  } else if (bright_center * 5 < bright * 4) {
-    reject = "center"; /* bright mass not in inner region */
-  }
-
-  if (stats != NULL) {
-    stats->reject = reject != NULL ? reject : "ok";
-  }
-  return reject != NULL;
+  /* Always accept — empty class is predicted by the network. */
+  return 0;
 }

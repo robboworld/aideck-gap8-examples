@@ -24,20 +24,19 @@
 #include "directional_allocator.h"
 #include "mem.h"
 #include <string.h>
-#include "Pooling5.h"
 #include "BNReluConvolution2.h"
-#include "Pooling3.h"
-#include "BNReluConvolution0.h"
-#include "BNReluConvolution4.h"
-#include "Pooling1.h"
 #include "FullyConnected6.h"
+#include "Pooling5.h"
+#include "Pooling3.h"
+#include "BNReluConvolution4.h"
+#include "BNReluConvolution0.h"
+#include "Pooling1.h"
 
 
 #ifndef DORY_DISABLE_CHECKSUMS
 #define VERBOSE 1
 #endif
 
-/* Fit AI-deck L2-emulated ram_malloc pool (24 KiB); weights ~6.2 KiB. */
 #define L3_WEIGHTS_SIZE 8192
 #define L3_INPUT_SIZE 2048
 #define L3_OUTPUT_SIZE 2048
@@ -57,10 +56,6 @@ void network_initialize() {
   printf("\nL3 Buffer alloc initial\t@ %d:\t%s\n", (unsigned int)L3_input, L3_input?"Ok":"Failed");
   printf("\nL3 Buffer alloc initial\t@ %d:\t%s\n", (unsigned int)L3_output, L3_output?"Ok":"Failed");
 #endif
-
-  if (L3_weights == NULL || L3_input == NULL || L3_output == NULL) {
-    return;
-  }
 
   void *w_ptr = L3_weights;
   for (int i = 0; i < 4; i++) {
@@ -140,7 +135,7 @@ struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_siz
 void network_run_wait(struct network_run_token token)
 {
   pi_cluster_close(&token.cluster_dev);
-  print_perf("Final", cycle_network_execution, 590592);
+  print_perf("Final", cycle_network_execution, 590976);
 }
 
 void network_run(void *l2_buffer, size_t l2_buffer_size, void *l2_final_output, int exec, int initial_dir)

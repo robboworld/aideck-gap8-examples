@@ -53,42 +53,42 @@ static int allocate_layer[7] = {1, 0, 1, 0, 1, 0, 1};
 static int branch_input[7] = {0, 0, 0, 0, 0, 0, 0};
 static int branch_output[7] = {0, 0, 0, 0, 0, 0, 0};
 static int branch_change[7] = {0, 0, 0, 0, 0, 0, 0};
-static int weights_checksum[7] = {18521, 0, 166412, 0, 462402, 0, 96917};
-static int weights_size[7] = {200, 0, 1408, 0, 3840, 0, 768};
+static int weights_checksum[7] = {18798, 0, 165824, 0, 466703, 0, 143591};
+static int weights_size[7] = {200, 0, 1408, 0, 3840, 0, 1152};
 static int activations_checksum[7][1] = {{
-  47077  },
+  42949  },
 {
-  202628  },
+  142704  },
 {
-  64432  },
+  46870  },
 {
-  52540  },
+  53767  },
 {
-  25205  },
+  22508  },
 {
-  22566  },
+  16602  },
 {
-  14055  }
+  9084  }
 };
 static int activations_size[7] = {1024, 8192, 2048, 4096, 1024, 1536, 384};
 static int out_mult_vector[7] = {1, 1, 1, 1, 1, 1, 1};
 static int out_shift_vector[7] = {24, 0, 24, 0, 24, 0, 0};
 static int activations_out_checksum[7][1] = {{
-  202628 },
+  142704 },
 {
-  64432 },
+  46870 },
 {
-  52540 },
+  53767 },
 {
-  25205 },
+  22508 },
 {
-  22566 },
+  16602 },
 {
-  14055 },
+  9084 },
 {
-  924 }
+  1740 }
 };
-static int activations_out_size[7] = {8192, 2048, 4096, 1024, 1536, 384, 8};
+static int activations_out_size[7] = {8192, 2048, 4096, 1024, 1536, 384, 12};
 static int layer_with_weights[7] = {1, 0, 1, 0, 1, 0, 1};
 #endif
 

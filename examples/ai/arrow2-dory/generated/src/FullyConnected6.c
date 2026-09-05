@@ -75,14 +75,14 @@ void FullyConnected6(
   DMA_copy_W.hwc_to_chw = 0;
   DMA_copy_W.stride_2d = 384;
   DMA_copy_W.stride_1d = 384;
-  DMA_copy_W.number_of_2d_copies = 2;
+  DMA_copy_W.number_of_2d_copies = 3;
   DMA_copy_W.number_of_1d_copies = 1;
   DMA_copy_W.dir = 1;
   DMA_copy_W.tid = dory_dma_channel;
   
   DMA_copy_y.hwc_to_chw = 0;
-  DMA_copy_y.stride_2d = 8;
-  DMA_copy_y.stride_1d = 8;
+  DMA_copy_y.stride_2d = 12;
+  DMA_copy_y.stride_1d = 12;
   DMA_copy_y.dir = 0;
   DMA_copy_y.tid = dory_dma_channel;
 
@@ -109,7 +109,7 @@ void FullyConnected6(
   int _i_nof_load=0, _i_nif_load=0, _i_h_load=0, _i_w_load=0;
   int _i_nof_exec=1, _i_nif_exec=1, _i_h_exec=1, _i_w_exec=1;
   volatile uint8_t *im2col;
-  im2col = l1_buffer + 1200;
+  im2col = l1_buffer + 1588;
   uint16_t out_shift = out_shift_in;
 
   ////////////////////////////
@@ -135,10 +135,10 @@ void FullyConnected6(
         pad_offset_w = 0;
       y_tile_size_h   = (_i_h_load+1 == 1)   ? 1 : 1;
       y_tile_size_w   = (_i_w_load+1 == 1)   ? 1 : 1;
-      y_tile_size_nof = (_i_nof_load+1 == 1) ? 2 : 2;
+      y_tile_size_nof = (_i_nof_load+1 == 1) ? 3 : 3;
       y_tile_size_byte = y_tile_size_nof*y_tile_size_h*y_tile_size_w*32/8;
-      y_length_nof_byte = (_i_nof_load+1 == 1)   ? 8 : 8;
-      W_tile_size_nof = (_i_nof_load+1 == 1) ? 2 : 2;
+      y_length_nof_byte = (_i_nof_load+1 == 1)   ? 12 : 12;
+      W_tile_size_nof = (_i_nof_load+1 == 1) ? 3 : 3;
       W_tile_size_nif = (_i_nif_load+1 == 1) ? 384 : 384;
       W_tile_size_byte = W_tile_size_nof*W_tile_size_nif*8*1*1/8;
       W_length_nif_byte = (_i_nif_load+1 == 1) ? 384 : 384;
@@ -156,8 +156,8 @@ void FullyConnected6(
       // transfer of next weight tile if changed input or output channels
       if (_i_nif_load!=_i_nif_exec || _i_nof_load!=_i_nof_exec)
       {
-        DMA_copy_W.ext = dory_get_tile_3d(l2_W, _i_nof_load, 0, _i_nif_load, 2, 1*1, 384, 1*1, 384, 0,0,0,0,0,0, 8);
-        DMA_copy_W.loc = (l1_buffer + 408);
+        DMA_copy_W.ext = dory_get_tile_3d(l2_W, _i_nof_load, 0, _i_nif_load, 3, 1*1, 384, 1*1, 384, 0,0,0,0,0,0, 8);
+        DMA_copy_W.loc = (l1_buffer + 412);
         DMA_copy_W.number_of_2d_copies = W_tile_size_nof;
         DMA_copy_W.length_1d_copy = W_length_nif_byte;
         dory_dma_memcpy_async(&DMA_copy_W);
@@ -165,7 +165,7 @@ void FullyConnected6(
       }
     // creation of the pointers to input, output, weights, lambda and k
     x = (uint8_t *) (l1_buffer + 0);
-    W = (uint8_t *) (l1_buffer + 408);
+    W = (uint8_t *) (l1_buffer + 412);
     y = (uint8_t *) (l1_buffer + 392);
     p_r = 0;
     p_l = 0;
@@ -186,7 +186,7 @@ void FullyConnected6(
       x_tile_size_nif, y_tile_size_nof
       );
     pi_cl_team_barrier(0);
-      DMA_copy_y.ext = dory_get_tile_3d(l2_y, _i_h_load, _i_w_load, _i_nof_load, 1, 1, 2, 1, 2, 0, 0, 0, 0, 0, 0, 32);
+      DMA_copy_y.ext = dory_get_tile_3d(l2_y, _i_h_load, _i_w_load, _i_nof_load, 1, 1, 3, 1, 3, 0, 0, 0, 0, 0, 0, 32);
       DMA_copy_y.loc = (l1_buffer + 392);
       DMA_copy_y.number_of_2d_copies = y_tile_size_h;
       DMA_copy_y.number_of_1d_copies = y_tile_size_w;
