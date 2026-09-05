@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "model": "arrow2",
+  "class_names": [
+    "left",
+    "right"
+  ],
+  "input": {
+    "shape": [
+      1,
+      1,
+      32,
+      32
+    ],
+    "dtype": "uint8",
+    "range": [
+      0,
+      255
+    ],
+    "layout": "CHW"
+  },
+  "output": {
+    "shape": [
+      1,
+      2
+    ],
+    "dtype": "int32"
+  },
+  "quantization": {
+    "nemo_version": "unknown",
+    "weight_bits": 7,
+    "activation_bits": 8,
+    "integer_deployable_accuracy": 1.0
+  },
+  "onnx_sha256": "6eb6b7a2222d85117b7f649ff42d67b9ce4833bcc7be3ceb2e86db67d9091f48",
+  "gvsoc": {
+    "cycles": 203062,
+    "macs": 590592,
+    "mac_per_cycle": 2.90843,
+    "cores": 8,
+    "checksum_failures": 0,
+    "checksum_passes": 16
+  },
+  "files": {
+    "hex/BNReluConvolution0_weights.hex": "55ebbb5738c609687c61a3d989644a601bc7f5fa83fb760beb3bb131c5e89ced",
+    "hex/BNReluConvolution2_weights.hex": "f78f7377743d480b122c5472faaace43607c8a2116d81302aa18c1256fee7d88",
+    "hex/BNReluConvolution4_weights.hex": "e029f12e9b355218840d642a8420505a5712713fc6b462959bf3cd5b77582842",
+    "hex/FullyConnected6_weights.hex": "01b2f9922388e35954cbbc6c86743b5cb085da6fcdb0fec606f4be0f382f3044",
+    "hex/inputs.hex": "31e405301170ccf2017e4d67dbb27386f9a8d9458a33d44e4a2d15283dbcde53",
+    "inc/BNReluConvolution0.h": "83e91217e8e2ed38254017a9910fc964d48e5d3dff63a37295ac3da5b324c7fb",
+    "inc/BNReluConvolution2.h": "266aba88c8b7626c23580def1ac26c4c206ba9b58edfa59130471c6e6cce9000",
+    "inc/BNReluConvolution4.h": "8915882a2e749b1f6afa7ec143df2b3efbc23695d7406136f8a615bea500db0b",
+    "inc/FullyConnected6.h": "89778e96d578d3a8687cd0754b6c4fda047399787d01af45bee9b3a3d321b485",
+    "inc/Pooling1.h": "dd9c215a2373fc73ac4c7a2f759f531ead1d79643a1d37f1504d5b5144e946c6",
+    "inc/Pooling3.h": "473decfa7228f5c4cb8bc4c0c15dff2ea4cc77b825466b3a3d5f50080627bc99",
+    "inc/Pooling5.h": "29e4f99cb9c9698e5c185b603340e38e241449a6df1073f7f3fb49d6c7fe61cd",
+    "inc/directional_allocator.h": "91ad8e78ab0b70ee1de6c9ae8052a99ce5b3a205e354d8278815a153a3cb26bf",
+    "inc/dory_dma.h": "47a783da52aade49d9b5ad1d643356c459372ca5d5d0f103cacbbb08dcb90b9f",
+    "inc/dory_get_tile.h": "5b65e6ea29cf939451b6aabd21201e85eae8c1b94b9e1905d2ce495c1f224385",
+    "inc/mchan.h": "dc0f989ac2d18051953ee55d8ade09eb5cc63995fcfc978b17bdbb3fe542ca93",
+    "inc/mem.h": "7d93cafc360eb12f3e78172905bc17f0ab490956f1a72d838ddcf36a39800eb1",
+    "inc/model_metadata.h": "781188932f2ab464fc06afd4d4d61d760958e2547b44b0fbf51781fdb93838c1",
+    "inc/net_utils.h": "9e919398f1b2235d6f45efca5a5b963f8cc78a2ea42dfd9928e68d0dca960a0e",
+    "inc/network.h": "9b94df70212358a96e044a3de2508b8298a15db2b0cb4533df9ddda214f86023",
+    "inc/pulp_nn_kernels.h": "3f5c6095723203ab31e09bc792a035b62a4b2c3790e72aee58aa981d9d54b143",
+    "inc/pulp_nn_utils.h": "85568b5aae4046262f924d57f7a998e8bde89ea7cb733a9fc75c4a11283ddc48",
+    "src/BNReluConvolution0.c": "22a56f13655caec4d9af6780d512afa9a338fb3877448cec424321df20b0c56b",
+    "src/BNReluConvolution2.c": "0d1a0e02273bb140a059034e1b838be48863d104fab832112e01872393c896c9",
+    "src/BNReluConvolution4.c": "d988c6bea83236a0e79dd1deca620f03d05e70e04cdc16e64cc56ac59c409495",
+    "src/FullyConnected6.c": "def689173efb656de935236ba5b0a2851ec9d1ad0db8018acfcb041fd9f22ecf",
+    "src/Pooling1.c": "cc9b540a5b6ec87b6ce3c922127ecd614402b3a8167678e1e9e5392d978a037f",
+    "src/Pooling3.c": "67a2e3a4300b5ce2e24e0d3b6a96f0ce1283db628fb2be2ff7081c7e715a922e",
+    "src/Pooling5.c": "6120fbfc1419c13a8ea1577b349f90c2864d1eda58226af8147550f934999842",
+    "src/dory_dma.c": "6d2b6bd6125a98d9c4e59968d0ae64a730a7dff264dfc30476031ff6719edc31",
+    "src/mem.c": "19c1e5c72b902de023d66ff50f683acc976cda8860db719ca0c1c2f9c1d07a70",
+    "src/net_utils.c": "2de853788154c05597ad4e4ee9ad949b5bf9094df8f0e885cef6812c0eed96c5",
+    "src/network.c": "b411d6e625653a41c6477abd7ff7f652c15cdc6f33384e1f4f2a8a857cd754a0",
+    "src/pulp_nn_add.c": "9e28b38bd9ee6653c2b638fac97104ced0140e934fbe2a500c384a9d1175d23f",
+    "src/pulp_nn_avgpool.c": "f9608cd1af705b6234047102c9e91a752026d02079f6163e0c16aac3d7dfbec0",
+    "src/pulp_nn_conv_Co_parallel.c": "2cb4c3c3e5337532dfb19466f6d14fc0c3d26b4c49a39502144e71584114fd17",
+    "src/pulp_nn_conv_HoWo_parallel.c": "ea0e8eb81cf061def32911d2c9e07fb51aa4b6f2737391b40540a6053ee13cad",
+    "src/pulp_nn_conv_Ho_parallel.c": "ce09f7dab46eaaec2606ab41967079945cebd2713278096da815a81ef31106f6",
+    "src/pulp_nn_depthwise_3x3_s1.c": "ff2ab6b5f0220f306d0545e133360d7079077bb5a4a1413646f4332562de76ed",
+    "src/pulp_nn_depthwise_generic.c": "6af30d9c89b6bf8ea7245373b505ae997885bfc65ee87d0833bd2595426b9ada",
+    "src/pulp_nn_depthwise_generic_less_4_weights.c": "9291a5b6c58f6ac86e17e02f1bac5fae8994d962c270d3773afbd4983ba34cfd",
+    "src/pulp_nn_linear.c": "862834ef67ee825e55aeec736e2c74073a18c3efbcbda34d679e948ec00585a3",
+    "src/pulp_nn_linear_out_32.c": "18926948808e715ead6f1285ea7236fb678a36802ec68b15835562dd9487f9f2",
+    "src/pulp_nn_matmul.c": "03c7698c2cc42777b583be46da5180b6565f14b55714d1886e51d455361b5862",
+    "src/pulp_nn_maxpool.c": "800226b3f7177a83354d770a3fa2cd9c47a437c7f0982f2711d44bb9cf012dbd",
+    "src/pulp_nn_pointwise_Co_parallel.c": "c261f6ca51b84f9e442e87d5c18d10999ca229bd4612b89b670d056bb2cdb685",
+    "src/pulp_nn_pointwise_HoWo_parallel.c": "ff598c31a96e3dfbf696f8c6e135d2058773daa39103e464e690db6b7bcd19b0",
+    "src/pulp_nn_pointwise_Ho_parallel.c": "4e8c6baf42493d5e45e268a18a52fbb390d45a7ed533860077fa742b556fe316",
+    "src/pulp_nn_utils.c": "54e959ca5815a52d473a58d2dd2f5c00a4afe42fc8ef0703048fbc3f88fbd105"
+  }
+}
