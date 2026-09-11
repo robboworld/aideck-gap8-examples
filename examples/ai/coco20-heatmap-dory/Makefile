@@ -9,7 +9,8 @@ DETECTOR_PERIOD_US ?= 0
 INPUT_MODE ?= camera
 
 APP = coco20_heatmap_dory
-DORY_SRCS = generated/src/network.c generated/src/mem.c generated/src/net_utils.c generated/src/dory_dma.c generated/src/embedded_weights.c generated/src/BNReluConvolution0.c generated/src/BNReluConvolution1.c generated/src/BNReluConvolution2.c generated/src/BNReluConvolution3.c generated/src/BNReluConvolution4.c generated/src/pulp_nn_conv_Ho_parallel.c generated/src/pulp_nn_conv_HoWo_parallel.c generated/src/pulp_nn_conv_Co_parallel.c generated/src/pulp_nn_matmul.c generated/src/pulp_nn_utils.c generated/src/pulp_nn_conv_Ho_parallel_out_32.c generated/src/pulp_nn_conv_Ho_parallel_int32.c generated/src/pulp_nn_pointwise_HoWo_parallel_32.c
+# E28 (S1): BNRelu0-3 + Convolution4 head. (E39 used BNRelu0-6 — do not mix.)
+DORY_SRCS = generated/src/network.c generated/src/mem.c generated/src/net_utils.c generated/src/dory_dma.c generated/src/embedded_weights.c generated/src/BNReluConvolution0.c generated/src/BNReluConvolution1.c generated/src/BNReluConvolution2.c generated/src/BNReluConvolution3.c generated/src/Convolution4.c generated/src/pulp_nn_conv_Ho_parallel.c generated/src/pulp_nn_conv_HoWo_parallel.c generated/src/pulp_nn_conv_Co_parallel.c generated/src/pulp_nn_matmul.c generated/src/pulp_nn_utils.c generated/src/pulp_nn_conv_Ho_parallel_out_32.c generated/src/pulp_nn_conv_Ho_parallel_int32.c generated/src/pulp_nn_pointwise_Ho_parallel.c generated/src/pulp_nn_pointwise_Co_parallel.c generated/src/pulp_nn_pointwise_HoWo_parallel.c generated/src/pulp_nn_pointwise_HoWo_parallel_32.c
 APP_SRCS += main.c ../../../lib/cpx/src/com.c ../../../lib/cpx/src/cpx.c $(DORY_SRCS)
 APP_INC += . generated/inc ../../../lib/cpx/inc
 APP_CFLAGS += -DNUM_CORES=$(CORE) -O2 -DconfigUSE_TIMERS=1 -DINCLUDE_xTimerPendFunctionCall=1 -DTXQ_SIZE=5 -DRXQ_SIZE=5

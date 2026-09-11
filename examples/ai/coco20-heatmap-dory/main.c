@@ -35,7 +35,8 @@ extern int cycle_network_execution;
 #define COCO20_USE_CAMERA 1
 #endif
 
-static const char *names[20] = {"bicycle","motorcycle","airplane","bus","train","truck","boat","bird","cat","dog","horse","sheep","cow","elephant","zebra","giraffe","couch","tv","suitcase","backpack"};
+/* HIMAX21_MTSD */
+static const char *names[21] = {"stop", "yield", "no-entry", "no-parking", "no-stopping", "keep-right", "keep-left", "priority-road", "roundabout", "go-straight", "turn-left", "turn-right", "no-left-turn", "no-right-turn", "no-u-turn", "max-speed", "info-ped", "warn-ped", "roadworks", "children", "other"};
 
 typedef struct {
   uint8_t magic;
@@ -157,21 +158,21 @@ static void fill_static_input(uint8_t *input) {
 static void report(const int32_t *output) {
   int32_t best = INT32_MIN; int best_class = 0, best_row = 0, best_col = 0;
   for (int row = 0; row < 20; ++row) for (int col = 0; col < 20; ++col)
-    for (int cls = 0; cls < 20; ++cls) {
-      int32_t value = output[((row * 20 + col) * 24) + cls];
+    for (int cls = 0; cls < 21; ++cls) {
+      int32_t value = output[((row * 20 + col) * 25) + cls];
       if (value > best) { best = value; best_class = cls; best_row = row; best_col = col; }
     }
-  const int32_t *box = output + ((best_row * 20 + best_col) * 24) + 20;
-  cpxPrintToConsole(LOG_TO_CRTP, "coco20 top=%s logit=%ld cell=%d,%d box_raw=[%ld,%ld,%ld,%ld] cycles=%d\n", names[best_class], (long)best, best_col, best_row, (long)box[0], (long)box[1], (long)box[2], (long)box[3], cycle_network_execution);
+  const int32_t *box = output + ((best_row * 20 + best_col) * 25) + 21;
+  cpxPrintToConsole(LOG_TO_CRTP, "himax21 top=%s logit=%ld cell=%d,%d box_raw=[%ld,%ld,%ld,%ld] cycles=%d\n", names[best_class], (long)best, best_col, best_row, (long)box[0], (long)box[1], (long)box[2], (long)box[3], cycle_network_execution);
 }
 
-/* The detector head uses the exact DORY-packed weights: 3x3x80x24 int8,
- * followed by 24 int32 biases. It runs on FC to avoid the GAP8 cluster's
+/* The detector head uses the exact DORY-packed weights: 3x3x80x25 int8,
+ * followed by 25 int32 biases. It runs on FC to avoid the GAP8 cluster's
  * int32 worker issue; backbone layers still run on all eight cluster cores. */
 static void detector_head_fc(const uint8_t *input, int32_t *output) {
   const int8_t *weights = (const int8_t *)(coco20_dory_weights + HEAD_WEIGHT_OFFSET);
-  const int32_t *bias = (const int32_t *)(coco20_dory_weights + HEAD_WEIGHT_OFFSET + 17280);
-  for (int oy = 0; oy < 20; ++oy) for (int ox = 0; ox < 20; ++ox) for (int oc = 0; oc < 24; ++oc) {
+  const int32_t *bias = (const int32_t *)(coco20_dory_weights + HEAD_WEIGHT_OFFSET + 18000);
+  for (int oy = 0; oy < 20; ++oy) for (int ox = 0; ox < 20; ++ox) for (int oc = 0; oc < 25; ++oc) {
     int32_t sum = bias[oc];
     const int8_t *kernel = weights + oc * 9 * 80;
     for (int ky = 0; ky < 3; ++ky) {
@@ -185,7 +186,7 @@ static void detector_head_fc(const uint8_t *input, int32_t *output) {
         for (int ic = 0; ic < 80; ++ic) sum += (int32_t)pixel[ic] * coeff[ic];
       }
     }
-    output[(oy * 20 + ox) * 24 + oc] = sum;
+    output[(oy * 20 + ox) * 25 + oc] = sum;
   }
 }
 
@@ -247,13 +248,13 @@ static void detector_task(void *arg) {
     send_image(camera_buffer);
 #endif
     const uint32_t t_stream = pi_time_get_us();
-    int32_t *head_output = (int32_t *)(arena + L2_ARENA_BYTES - 20 * 20 * 24 * sizeof(int32_t));
+    int32_t *head_output = (int32_t *)(arena + L2_ARENA_BYTES - 20 * 20 * 25 * sizeof(int32_t));
     preprocess(camera_buffer, arena);
     const uint32_t t_preprocess = pi_time_get_us();
 #else
     const uint32_t t_capture = t0;
     const uint32_t t_stream = t0;
-    int32_t *head_output = (int32_t *)(arena + L2_ARENA_BYTES - 20 * 20 * 24 * sizeof(int32_t));
+    int32_t *head_output = (int32_t *)(arena + L2_ARENA_BYTES - 20 * 20 * 25 * sizeof(int32_t));
     fill_static_input(arena);
     const uint32_t t_preprocess = pi_time_get_us();
 #endif

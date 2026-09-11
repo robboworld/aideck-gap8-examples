@@ -25,14 +25,14 @@
 #include "mem.h"
 #include "embedded_weights.h"
 #include <string.h>
-#include "BNReluConvolution0.h"
-#include "BNReluConvolution1.h"
 #include "BNReluConvolution2.h"
 #include "BNReluConvolution3.h"
-#include "BNReluConvolution4.h"
+#include "BNReluConvolution1.h"
+#include "BNReluConvolution0.h"
+#include "Convolution4.h"
 
 
-#define VERBOSE 0
+#define VERBOSE 1
 
 #define L3_WEIGHTS_SIZE 4000000
 #define L3_INPUT_SIZE 1500000
@@ -41,64 +41,16 @@ static void *L3_weights = NULL;
 static void *L3_input = NULL;
 static void *L3_output = NULL;
 int cycle_network_execution;
-static int cluster_frequency_configured;
-
-/* Exact final 3x3 detector head, partitioned by output cell across the
- * cluster team.  This avoids the slow FC implementation while retaining the
- * same packed weights, int32 bias and arithmetic as the exported model. */
-static void detector_head_cluster(void *arg)
-{
-  unsigned int *args = (unsigned int *)arg;
-  const uint8_t *input = (const uint8_t *)args[0];
-  int32_t *output = (int32_t *)args[1];
-  const int8_t *weights = (const int8_t *)args[2];
-  const int32_t *bias = (const int32_t *)args[3];
-  const int core = pi_core_id();
-
-  for (int cell = core; cell < 400; cell += NUM_CORES) {
-    const int oy = cell / 20;
-    const int ox = cell % 20;
-    for (int oc = 0; oc < 24; ++oc) {
-      int32_t sum = bias[oc];
-      const int8_t *kernel = weights + oc * 9 * 80;
-      for (int ky = 0; ky < 3; ++ky) {
-        const int iy = oy + ky - 1;
-        if (iy < 0 || iy >= 20) continue;
-        for (int kx = 0; kx < 3; ++kx) {
-          const int ix = ox + kx - 1;
-          if (ix < 0 || ix >= 20) continue;
-          const uint8_t *pixel = input + (iy * 20 + ix) * 80;
-          const int8_t *coeff = kernel + (ky * 3 + kx) * 80;
-          /* GAP8 has a native unsigned×signed dot product for four int8
-           * lanes. Both tensors are contiguous and 4-byte aligned here. */
-          for (int ic = 0; ic < 80; ic += 4)
-            sum = __builtin_pulp_sdotusp4(*(const v4u *)(pixel + ic),
-                                           *(const v4s *)(coeff + ic), sum);
-        }
-      }
-      output[cell * 24 + oc] = sum;
-    }
-  }
-}
 /* Moves the weights and the biases from hyperflash to hyperram */
 void network_initialize() {
-
   L3_weights = (void *)coco20_dory_weights;
   L3_input = NULL;
   L3_output = NULL;
-
-#ifdef VERBOSE
-  printf("\nL3 Buffer alloc initial\t@ %d:\t%s\n", (unsigned int)L3_weights, L3_weights?"Ok":"Failed");
-  printf("\nL3 Buffer alloc initial\t@ %d:\t%s\n", (unsigned int)L3_input, L3_input?"Ok":"Failed");
-  printf("\nL3 Buffer alloc initial\t@ %d:\t%s\n", (unsigned int)L3_output, L3_output?"Ok":"Failed");
-#endif
-
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 5; i++) {
     L3_weights_size[i] = weights_size[i];
   }
 }
 
-/* Remove RAM memory */
 void network_terminate() {
   L3_weights = NULL;
   L3_input = NULL;
@@ -124,7 +76,7 @@ void execute_layer_fork(void *args) {
       pi_cl_team_fork(NUM_CORES, (void *)BNReluConvolution3, args);
       break;
     case 4:
-      pi_cl_team_fork(NUM_CORES, (void *)BNReluConvolution4, args);
+      pi_cl_team_fork(NUM_CORES, (void *)Convolution4, args);
       break;
   }
 
@@ -139,7 +91,7 @@ struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_siz
   // First open the cluster
   pi_cluster_conf_init(&conf);
   conf.id=0;
-  unsigned int args[5];
+  unsigned int args[4];
   args[0] = (unsigned int) l2_buffer;
   args[1] = (unsigned int) l2_buffer_size;
   args[2] = (unsigned int) l2_final_output;
@@ -150,17 +102,9 @@ struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_siz
   pi_open_from_conf(&cluster_dev, &conf);
   if (pi_cluster_open(&cluster_dev))
     return;
-  /* Apply the cluster clock only after pi_cluster_open(): doing it earlier
-   * stalls this board's FLL/CPX bring-up. */
-  if (!cluster_frequency_configured) {
-    pi_freq_set(PI_FREQ_DOMAIN_CL, 250000000);
-    cluster_frequency_configured = 1;
-  }
   // Then offload an entry point, this will get executed on the cluster controller
-  /* L1 is 64 KiB. DORY reserves 36.7 KiB for tiles, so the original
-   * 3.5/3.4 KiB per-core stacks overflowed L1 with eight cores. */
-  cluster_task.stack_size = 2048;
-  cluster_task.slave_stack_size = 2048;
+  cluster_task.stack_size = 3500;
+  cluster_task.slave_stack_size = 3400;
   pi_cluster_send_task_to_cl(&cluster_dev, &cluster_task);
   return (struct network_run_token) {
     .cluster_dev = cluster_dev
@@ -169,14 +113,12 @@ struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_siz
 
 void network_run_wait(struct network_run_token token)
 {
-  /* GAP8 FreeRTOS can block in pi_cluster_close() after a completed task.
-   * Keep the cluster powered during the live detector session instead. */
-  (void)token;
+  pi_cluster_close(&token.cluster_dev);
+  print_perf("Final", cycle_network_execution, 56044800);
 }
 
 void network_run(void *l2_buffer, size_t l2_buffer_size, void *l2_final_output, int exec, int initial_dir)
 {
-  L3_input = l2_buffer;
   network_run_wait(network_run_async(l2_buffer, l2_buffer_size, l2_final_output, exec, initial_dir));
 }
 
@@ -231,7 +173,7 @@ void network_run_cluster(void *args) {
 /* -------- SECTION 2 BEGIN --------- */
 /* ---------------------------------- */
   int weight_l_cnt = 0; // count how many layers with weights we have processed to increment the weights_L3 pointer
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 5; i++) {
 /* MEMORY ALLOCATION
   - allocate memory if layer is executed from L3;
   - allocate weights
@@ -286,21 +228,6 @@ void network_run_cluster(void *args) {
     pi_perf_stop();
     pi_perf_start();
     execute_layer_fork((void *) &largs);
-
-    /* After five backbone/refine layers (E37: refinement_blocks=2), run the
-     * final int32 head on the cluster. Stock DORY head tiling is unstable on
-     * this board OTA path. Weight offset = sum(weights_size[0:5]). */
-    if (i == 4) {
-      unsigned int head_args[4];
-      head_args[0] = (unsigned int)L2_output;
-      head_args[1] = (unsigned int)l2_final_output;
-      head_args[2] = (unsigned int)((uint8_t *)L3_weights + 161680);
-      head_args[3] = (unsigned int)((uint8_t *)L3_weights + 161680 + 17280);
-      pi_cl_team_fork(NUM_CORES, detector_head_cluster, head_args);
-      pi_perf_stop();
-      cycle_network_execution += pi_perf_read(PI_PERF_CYCLES);
-      return;
-    }
     // performance measurements: end
     pi_perf_stop();
     perf_cyc =  pi_perf_read(PI_PERF_CYCLES);
@@ -321,7 +248,7 @@ void network_run_cluster(void *args) {
     if (L3_output_layers[i]==1) {
       printf("Output in L3. Expected checksum: %d\n", activations_out_checksum[i][exec]);
     } else {
-      checksum(i + 1 < 6 ? "L2 output" : "final output",
+      checksum(i + 1 < 5 ? "L2 output" : "final output",
                L2_output, activations_out_size[i], activations_out_checksum[i][exec]);
     }
     printf("\n");
@@ -335,7 +262,7 @@ void network_run_cluster(void *args) {
       dfree(bypass_dimension, dir);
     L2_input = L2_output;
     // Residual connections
-    if (i < 5) {
+    if (i < 4) {
       if (branch_input[i+1] == 1) {
         bypass_activations = dmalloc(bypass_dimension, !dir);
         residual_number--;
@@ -374,10 +301,10 @@ void network_run_cluster(void *args) {
     dir = !dir;
   }
 
-
-  //memcpy(L2_output, l2_final_output, activations_out_size[5]); // BUGGY!
-  for (int i=0; i<activations_out_size[5]; i++)
+  //memcpy(L2_output, l2_final_output, activations_out_size[4]); // BUGGY!
+  for (int i=0; i<activations_out_size[4]; i++)
     *((uint8_t*)(l2_final_output+i)) = *((uint8_t*)(L2_output+i));
+
 /* ---------------------------------- */
 /* --------- SECTION 2 END ---------- */
 /* ---------------------------------- */

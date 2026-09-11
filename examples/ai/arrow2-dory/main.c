@@ -8,6 +8,7 @@
 #include "pmsis.h"
 #include "preprocess.h"
 #include "result_protocol.h"
+#include "arrow2_actuate.h"
 #include "cpx.h"
 
 #ifdef ARROW2_CAMERA_INPUT
@@ -49,6 +50,7 @@ static void publish_result(
     cls = arrow2_class_name(result->class_id);
   }
   publish_class(cls);
+  arrow2_actuate_on_class(cls);
 }
 
 static int run_inference(const arrow2_input_stats_t *stats) {
@@ -107,6 +109,7 @@ static int open_camera(void) {
 static void application(void) {
   phase = "cpx init";
   cpxInit();
+  arrow2_actuate_init();
   phase = "cpx ready";
   vTaskDelay(300 / portTICK_PERIOD_MS);
 

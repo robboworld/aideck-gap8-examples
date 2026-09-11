@@ -41,51 +41,47 @@ void execute_layer_fork(void *arg);
 #ifdef DEFINE_CONSTANTS
 // allocation of buffers with parameters needed by the network execution
 static const char * L3_weights_files[] = {
-  "BNReluConvolution0_weights.hex", "BNReluConvolution1_weights.hex", "BNReluConvolution2_weights.hex", "BNReluConvolution3_weights.hex", "BNReluConvolution4_weights.hex", "Convolution5_weights.hex"
+  "BNReluConvolution0_weights.hex", "BNReluConvolution1_weights.hex", "BNReluConvolution2_weights.hex", "BNReluConvolution3_weights.hex", "Convolution4_weights.hex"
 };
-static int L3_weights_size[6];
-static int layers_pointers[6];
-static char * Layers_name[6] = {"BNReluConvolution0", "BNReluConvolution1", "BNReluConvolution2", "BNReluConvolution3", "BNReluConvolution4", "Convolution5"};
-static int L3_input_layers[6] = {1,
-0, 0, 0, 0, 0};
-static int L3_output_layers[6] = {0, 0, 0, 0, 0, 0};
-static int allocate_layer[6] = {1, 1, 1, 1, 1, 1};
-static int branch_input[6] = {0, 0, 0, 0, 0, 0};
-static int branch_output[6] = {0, 0, 0, 0, 0, 0};
-static int branch_change[6] = {0, 0, 0, 0, 0, 0};
-static int weights_checksum[6] = {37960, 945925, 4534316, 7575974, 7270920, 2614440};
-static int weights_size[6] = {400, 7680, 35840, 58880, 58880, 17376};
-static int activations_checksum[6][1] = {{
-  2522130  },
+static int L3_weights_size[5];
+static int layers_pointers[5];
+static char * Layers_name[5] = {"BNReluConvolution0", "BNReluConvolution1", "BNReluConvolution2", "BNReluConvolution3", "Convolution4"};
+static int L3_input_layers[5] = {1,
+0, 0, 0, 0};
+static int L3_output_layers[5] = {0, 0, 0, 0, 0};
+static int allocate_layer[5] = {1, 1, 1, 1, 1};
+static int branch_input[5] = {0, 0, 0, 0, 0};
+static int branch_output[5] = {0, 0, 0, 0, 0};
+static int branch_change[5] = {0, 0, 0, 0, 0};
+static int weights_checksum[5] = {36226, 943013, 4537577, 7558862, 2770074};
+static int weights_size[5] = {400, 7680, 35840, 58880, 18100};
+static int activations_checksum[5][1] = {{
+  1228514  },
 {
-  265986  },
+  807412  },
 {
-  306083  },
+  502911  },
 {
-  264640  },
+  331838  },
 {
-  399395  },
-{
-  538548  }
+  272393  }
 };
-static int activations_size[6] = {25600, 102400, 76800, 32000, 32000, 32000};
-static int out_mult_vector[6] = {1, 1, 1, 1, 1, 1};
-static int out_shift_vector[6] = {24, 24, 24, 24, 24, 0};
-static int activations_out_checksum[6][1] = {{
-  265986 },
+static int activations_size[5] = {25600, 102400, 76800, 32000, 32000};
+static int out_mult_vector[5] = {1, 1, 1, 1, 1};
+static int out_shift_vector[5] = {24, 24, 24, 24, 0};
+static int activations_out_checksum[5][1] = {{
+  807412 },
 {
-  306083 },
+  502911 },
 {
-  264640 },
+  331838 },
 {
-  399395 },
+  272393 },
 {
-  538548 },
-{
-  6383197 }
+  6302722 }
 };
-static int activations_out_size[6] = {102400, 76800, 32000, 32000, 32000, 38400};
-static int layer_with_weights[6] = {1, 1, 1, 1, 1, 1};
+static int activations_out_size[5] = {102400, 76800, 32000, 32000, 40000};
+static int layer_with_weights[5] = {1, 1, 1, 1, 1};
 #endif
 
 #endif  // __NETWORK_H__

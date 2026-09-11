@@ -63,6 +63,7 @@ APP_SRCS += \
   preprocess.c \
   inference.c \
   result_protocol.c \
+  arrow2_actuate.c \
   $(DORY_RUNTIME_SRCS)
 APP_CFLAGS += $(DORY_CFLAGS)
 APP_LDFLAGS += -lm
