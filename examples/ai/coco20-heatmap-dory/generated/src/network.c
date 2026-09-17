@@ -32,7 +32,9 @@
 #include "Convolution4.h"
 
 
+#ifndef DORY_DISABLE_CHECKSUMS
 #define VERBOSE 1
+#endif
 
 #define L3_WEIGHTS_SIZE 4000000
 #define L3_INPUT_SIZE 1500000
@@ -85,24 +87,29 @@ void execute_layer_fork(void *args) {
 
 struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_size, void *l2_final_output, int exec, int initial_dir)
 {
-  struct pi_device cluster_dev = {0};
+  static struct pi_device cluster_dev;
+  static int cluster_opened;
+  static unsigned int args[5];
+  static struct pi_cluster_task cluster_task;
   struct pi_cluster_conf conf;
-  struct pi_cluster_task cluster_task = {0};
-  // First open the cluster
-  pi_cluster_conf_init(&conf);
-  conf.id=0;
-  unsigned int args[4];
+
   args[0] = (unsigned int) l2_buffer;
   args[1] = (unsigned int) l2_buffer_size;
   args[2] = (unsigned int) l2_final_output;
   args[3] = (unsigned int) exec;
   args[4] = (unsigned int) initial_dir;
-  // open cluster...
+
+  if (!cluster_opened) {
+    pi_cluster_conf_init(&conf);
+    conf.id = 0;
+    memset(&cluster_dev, 0, sizeof(cluster_dev));
+    pi_open_from_conf(&cluster_dev, &conf);
+    if (pi_cluster_open(&cluster_dev))
+      return (struct network_run_token){ .cluster_dev = cluster_dev };
+    cluster_opened = 1;
+  }
+  memset(&cluster_task, 0, sizeof(cluster_task));
   pi_cluster_task(&cluster_task, network_run_cluster, args);
-  pi_open_from_conf(&cluster_dev, &conf);
-  if (pi_cluster_open(&cluster_dev))
-    return;
-  // Then offload an entry point, this will get executed on the cluster controller
   cluster_task.stack_size = 3500;
   cluster_task.slave_stack_size = 3400;
   pi_cluster_send_task_to_cl(&cluster_dev, &cluster_task);
@@ -113,8 +120,14 @@ struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_siz
 
 void network_run_wait(struct network_run_token token)
 {
-  pi_cluster_close(&token.cluster_dev);
+  /* Keep the cluster powered — close/open every frame hangs this GAP8 after
+   * the first Convolution4. token is unused. */
+  (void)token;
+#ifndef DORY_DISABLE_CHECKSUMS
   print_perf("Final", cycle_network_execution, 56044800);
+#else
+  (void)cycle_network_execution;
+#endif
 }
 
 void network_run(void *l2_buffer, size_t l2_buffer_size, void *l2_final_output, int exec, int initial_dir)
@@ -173,7 +186,9 @@ void network_run_cluster(void *args) {
 /* -------- SECTION 2 BEGIN --------- */
 /* ---------------------------------- */
   int weight_l_cnt = 0; // count how many layers with weights we have processed to increment the weights_L3 pointer
-  for (int i = 0; i < 5; i++) {
+  /* Layers 0-3 (BNRelu). Convolution4 is the int32 head — it hangs the
+   * cluster on the second call; FC runs that head instead. */
+  for (int i = 0; i < 4; i++) {
 /* MEMORY ALLOCATION
   - allocate memory if layer is executed from L3;
   - allocate weights
@@ -301,8 +316,7 @@ void network_run_cluster(void *args) {
     dir = !dir;
   }
 
-  //memcpy(L2_output, l2_final_output, activations_out_size[4]); // BUGGY!
-  for (int i=0; i<activations_out_size[4]; i++)
+  for (int i=0; i<activations_out_size[3]; i++)
     *((uint8_t*)(l2_final_output+i)) = *((uint8_t*)(L2_output+i));
 
 /* ---------------------------------- */
