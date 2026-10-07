@@ -67,7 +67,7 @@ static int open_pi_camera_himax(struct pi_device *device)
 
   // rotate image
   pi_camera_control(device, PI_CAMERA_CMD_START, 0);
-  uint8_t set_value = 3; /* H+V: upright SoftAP stream on this deck mount */
+  uint8_t set_value = 3;
   uint8_t reg_value;
   pi_camera_reg_set(device, IMG_ORIENTATION, &set_value);
   pi_time_wait_us(1000000);
@@ -143,7 +143,7 @@ uint32_t footerSize;
 pi_buffer_t jpeg_data;
 uint32_t jpegSize;
 
-static StreamerMode_t streamerMode = JPEG_ENCODING;
+static StreamerMode_t streamerMode = RAW_ENCODING;
 
 static CPXPacket_t txp;
 
@@ -208,21 +208,18 @@ void camera_task(void *parameters)
   cpxPrintToConsole(LOG_TO_CRTP, "Starting camera task...\n");
   uint32_t resolution = CAM_WIDTH * CAM_HEIGHT;
   uint32_t captureSize = resolution * sizeof(unsigned char);
-  cpxPrintToConsole(LOG_TO_CRTP, "streamer alloc...\n");
   imgBuff = (unsigned char *)pmsis_l2_malloc(captureSize);
   if (imgBuff == NULL)
   {
     cpxPrintToConsole(LOG_TO_CRTP, "Failed to allocate Memory for Image \n");
     return;
   }
-  cpxPrintToConsole(LOG_TO_CRTP, "streamer alloc ok, himax open...\n");
 
   if (open_pi_camera_himax(&camera))
   {
     cpxPrintToConsole(LOG_TO_CRTP, "Failed to open camera\n");
     return;
   }
-  cpxPrintToConsole(LOG_TO_CRTP, "streamer camera opened, jpeg...\n");
 
   struct jpeg_encoder_conf enc_conf;
   jpeg_encoder_conf_init(&enc_conf);

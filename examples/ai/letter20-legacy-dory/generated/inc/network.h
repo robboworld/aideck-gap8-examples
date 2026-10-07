@@ -21,6 +21,7 @@
 #define __NETWORK_H__
 
 #include <stddef.h>
+#include <stdint.h>
 #include "pmsis.h"
 
 
@@ -36,6 +37,18 @@ struct network_run_token network_run_async(void *l2_buffer, size_t l2_buffer_siz
 void network_run_wait(struct network_run_token token);
 void network_run(void *l2_buffer, size_t l2_buffer_size, void *l2_final_output, int exec, int initial_dir);
 void execute_layer_fork(void *arg);
+int network_cluster_ensure_open(void);
+struct pi_device *network_cluster_device(void);
+void network_cluster_close(void);
+void network_run_head(const uint8_t *features, int32_t *output);
+void network_run_head_fc(const uint8_t *features, int32_t *output);
+void network_prepare_inline_head(void);
+void network_cluster_run_head_inline(const uint8_t *features, int32_t *output);
+void report_legacy(const int32_t *output);
+
+/* Set on FC before network_run; consumed inside network_run_cluster. */
+extern int32_t *letter20_pending_head_out;
+extern const uint8_t *letter20_pending_feat;
 
 
 #ifdef DEFINE_CONSTANTS
@@ -53,32 +66,32 @@ static int allocate_layer[5] = {1, 1, 1, 1, 1};
 static int branch_input[5] = {0, 0, 0, 0, 0};
 static int branch_output[5] = {0, 0, 0, 0, 0};
 static int branch_change[5] = {0, 0, 0, 0, 0};
-static int weights_checksum[5] = {35207, 629170, 1821057, 2635819, 1396940};
+static int weights_checksum[5] = {36200, 638800, 1839443, 2637813, 1417328};
 static int weights_size[5] = {400, 5120, 14592, 21504, 10900};
 static int activations_checksum[5][1] = {{
-  2327578  },
+  2976561  },
 {
-  757079  },
+  919113  },
 {
-  325881  },
+  395676  },
 {
-  137683  },
+  205864  },
 {
-  197578  }
+  226092  }
 };
 static int activations_size[5] = {25600, 102400, 51200, 19200, 19200};
 static int out_mult_vector[5] = {1, 1, 1, 1, 1};
 static int out_shift_vector[5] = {24, 24, 24, 24, 0};
 static int activations_out_checksum[5][1] = {{
-  757079 },
+  919113 },
 {
-  325881 },
+  395676 },
 {
-  137683 },
+  205864 },
 {
-  197578 },
+  226092 },
 {
-  6939240 }
+  7115534 }
 };
 static int activations_out_size[5] = {102400, 51200, 19200, 19200, 40000};
 static int layer_with_weights[5] = {1, 1, 1, 1, 1};

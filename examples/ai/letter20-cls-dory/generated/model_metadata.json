@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "model": "letter20_cls",
+  "class_names": [
+    "A",
+    "C",
+    "E",
+    "F",
+    "H",
+    "K",
+    "L",
+    "M",
+    "N",
+    "P",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "empty"
+  ],
+  "input": {
+    "shape": [
+      1,
+      1,
+      32,
+      32
+    ],
+    "dtype": "uint8",
+    "range": [
+      0,
+      255
+    ],
+    "layout": "CHW"
+  },
+  "output": {
+    "shape": [
+      1,
+      20
+    ],
+    "dtype": "int32"
+  },
+  "quantization": {
+    "nemo_version": "unknown",
+    "weight_bits": 7,
+    "activation_bits": 8,
+    "integer_deployable_accuracy": 1.0
+  },
+  "onnx_sha256": "90c324bcc1504b1fbebff138061c303b486e36c114dbb85d50a418c8b0730bd8",
+  "gvsoc": {
+    "cycles": 362164,
+    "macs": 1927168,
+    "mac_per_cycle": 5.32126,
+    "cores": 8,
+    "checksum_failures": 0,
+    "checksum_passes": 16
+  },
+  "files": {
+    "hex/BNReluConvolution0_weights.hex": "224a4a97a75135fb0aae95064ac6382e9674e09bc3e7344a4d9275d764e30503",
+    "hex/BNReluConvolution2_weights.hex": "ca950e59c380739a36a8b999bdce3da1ca16c32fad63cbec50dcea3fdfc5a620",
+    "hex/BNReluConvolution4_weights.hex": "8e858c5c9a0e6f8a0b455a548eb529773f2cc98a99decd8411a3f700625fb6cd",
+    "hex/FullyConnected6_weights.hex": "1d95593730255b45746abf5ec49256c56ccba50c523aa79345f694d92196c905",
+    "hex/inputs.hex": "398f2978ec392ac08d397280087c94cd7f6fcdbeb899a57b90bc9da49199a888",
+    "inc/BNReluConvolution0.h": "83e91217e8e2ed38254017a9910fc964d48e5d3dff63a37295ac3da5b324c7fb",
+    "inc/BNReluConvolution2.h": "266aba88c8b7626c23580def1ac26c4c206ba9b58edfa59130471c6e6cce9000",
+    "inc/BNReluConvolution4.h": "8915882a2e749b1f6afa7ec143df2b3efbc23695d7406136f8a615bea500db0b",
+    "inc/FullyConnected6.h": "89778e96d578d3a8687cd0754b6c4fda047399787d01af45bee9b3a3d321b485",
+    "inc/Pooling1.h": "dd9c215a2373fc73ac4c7a2f759f531ead1d79643a1d37f1504d5b5144e946c6",
+    "inc/Pooling3.h": "473decfa7228f5c4cb8bc4c0c15dff2ea4cc77b825466b3a3d5f50080627bc99",
+    "inc/Pooling5.h": "29e4f99cb9c9698e5c185b603340e38e241449a6df1073f7f3fb49d6c7fe61cd",
+    "inc/directional_allocator.h": "91ad8e78ab0b70ee1de6c9ae8052a99ce5b3a205e354d8278815a153a3cb26bf",
+    "inc/dory_dma.h": "47a783da52aade49d9b5ad1d643356c459372ca5d5d0f103cacbbb08dcb90b9f",
+    "inc/dory_get_tile.h": "5b65e6ea29cf939451b6aabd21201e85eae8c1b94b9e1905d2ce495c1f224385",
+    "inc/mchan.h": "dc0f989ac2d18051953ee55d8ade09eb5cc63995fcfc978b17bdbb3fe542ca93",
+    "inc/mem.h": "7d93cafc360eb12f3e78172905bc17f0ab490956f1a72d838ddcf36a39800eb1",
+    "inc/model_metadata.h": "c14898c64556dcf88635bc6b1e81793487c9b1790bb95802387a16f6f9d265e1",
+    "inc/net_utils.h": "9e919398f1b2235d6f45efca5a5b963f8cc78a2ea42dfd9928e68d0dca960a0e",
+    "inc/network.h": "6039c928a2b74fda10dd266e3f34f821389a48a4a43a895055541391c6ca1a30",
+    "inc/pulp_nn_kernels.h": "3f5c6095723203ab31e09bc792a035b62a4b2c3790e72aee58aa981d9d54b143",
+    "inc/pulp_nn_utils.h": "85568b5aae4046262f924d57f7a998e8bde89ea7cb733a9fc75c4a11283ddc48",
+    "src/BNReluConvolution0.c": "63e6c7a186ba1740a8c35741d4ae0423a27e81e893c7e1eadf813b40a546c360",
+    "src/BNReluConvolution2.c": "8333f3cafe3be5b5bfc7805695d7ee9882fd20fb3a92520a75edd374104bf53b",
+    "src/BNReluConvolution4.c": "d845c64368adcc6a4e603db6e960353a1d13fec7c8ae5e3c2008e5b77580299a",
+    "src/FullyConnected6.c": "34ab269d635b79df52228d6612d2fb206abd630fb792bf036253481247fd62cb",
+    "src/Pooling1.c": "2449e63f64c148c6395b451fd37f502e06489e0c5a04ae153d1ad881ea2278b6",
+    "src/Pooling3.c": "47d59e9a94f92123b56e9e95e26d6fec9327b224732b43c6578e832e78406b26",
+    "src/Pooling5.c": "f880522748bf09dac6e84ff80d1c51b160d143327a50e9a136af2f22668292ea",
+    "src/dory_dma.c": "6d2b6bd6125a98d9c4e59968d0ae64a730a7dff264dfc30476031ff6719edc31",
+    "src/mem.c": "19c1e5c72b902de023d66ff50f683acc976cda8860db719ca0c1c2f9c1d07a70",
+    "src/net_utils.c": "2de853788154c05597ad4e4ee9ad949b5bf9094df8f0e885cef6812c0eed96c5",
+    "src/network.c": "f0c99f05c01e721f1abb5f42d26c177216be1bd534cfa77ec0eead01cd97013d",
+    "src/pulp_nn_add.c": "9e28b38bd9ee6653c2b638fac97104ced0140e934fbe2a500c384a9d1175d23f",
+    "src/pulp_nn_avgpool.c": "f9608cd1af705b6234047102c9e91a752026d02079f6163e0c16aac3d7dfbec0",
+    "src/pulp_nn_conv_Co_parallel.c": "2cb4c3c3e5337532dfb19466f6d14fc0c3d26b4c49a39502144e71584114fd17",
+    "src/pulp_nn_conv_HoWo_parallel.c": "ea0e8eb81cf061def32911d2c9e07fb51aa4b6f2737391b40540a6053ee13cad",
+    "src/pulp_nn_conv_Ho_parallel.c": "ce09f7dab46eaaec2606ab41967079945cebd2713278096da815a81ef31106f6",
+    "src/pulp_nn_depthwise_3x3_s1.c": "ff2ab6b5f0220f306d0545e133360d7079077bb5a4a1413646f4332562de76ed",
+    "src/pulp_nn_depthwise_generic.c": "6af30d9c89b6bf8ea7245373b505ae997885bfc65ee87d0833bd2595426b9ada",
+    "src/pulp_nn_depthwise_generic_less_4_weights.c": "9291a5b6c58f6ac86e17e02f1bac5fae8994d962c270d3773afbd4983ba34cfd",
+    "src/pulp_nn_linear.c": "862834ef67ee825e55aeec736e2c74073a18c3efbcbda34d679e948ec00585a3",
+    "src/pulp_nn_linear_out_32.c": "18926948808e715ead6f1285ea7236fb678a36802ec68b15835562dd9487f9f2",
+    "src/pulp_nn_matmul.c": "03c7698c2cc42777b583be46da5180b6565f14b55714d1886e51d455361b5862",
+    "src/pulp_nn_maxpool.c": "800226b3f7177a83354d770a3fa2cd9c47a437c7f0982f2711d44bb9cf012dbd",
+    "src/pulp_nn_pointwise_Co_parallel.c": "c261f6ca51b84f9e442e87d5c18d10999ca229bd4612b89b670d056bb2cdb685",
+    "src/pulp_nn_pointwise_HoWo_parallel.c": "ff598c31a96e3dfbf696f8c6e135d2058773daa39103e464e690db6b7bcd19b0",
+    "src/pulp_nn_pointwise_Ho_parallel.c": "4e8c6baf42493d5e45e268a18a52fbb390d45a7ed533860077fa742b556fe316",
+    "src/pulp_nn_utils.c": "54e959ca5815a52d473a58d2dd2f5c00a4afe42fc8ef0703048fbc3f88fbd105"
+  }
+}
