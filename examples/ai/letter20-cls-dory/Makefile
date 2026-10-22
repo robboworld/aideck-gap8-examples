@@ -2,6 +2,7 @@ io ?= uart
 PMSIS_OS ?= freertos
 CORE ?= 8
 EMBED_WEIGHTS ?= 1
+LETTER20_PERIOD_MS ?= 100
 
 APP = letter20_cls_dory
 GENERATED_DIR = generated
@@ -31,6 +32,7 @@ endif
 APP_INC += . $(GENERATED_DIR)/inc
 APP_CFLAGS += \
   -DNUM_CORES=$(CORE) \
+  -DLETTER20_PERIOD_MS=$(LETTER20_PERIOD_MS) \
   -O2 \
   -DconfigUSE_TIMERS=1 \
   -DINCLUDE_xTimerPendFunctionCall=1 \

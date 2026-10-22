@@ -5,7 +5,7 @@
  * DORY TinyShapeCNN (20 classes: 19 letters + empty) -> one CRTP console
  * line per frame:
  *
- *   L20 <frame> <top1> <logit1> <top2> <logit2> <top3> <logit3> <kcycles> <ms>
+ *   L20 <frame> <t_us> <top1> <logit1> <top2> <logit2> <top3> <logit3> <kcycles> <ms>
  *
  * and every LETTER20_DUMP_EVERY frames the model input as 32 lines
  *   L20i <frame> <row> <32 hex nibbles>
@@ -70,8 +70,8 @@ static void classify_and_publish(uint32_t frame, uint32_t started_us) {
   const letter20_top3_t t = letter20_top3(logits);
   const uint32_t ms = (pi_time_get_us() - started_us) / 1000u;
   cpxPrintToConsole(
-    LOG_TO_CRTP, "L20 %u %s %d %s %d %s %d %u %u\n",
-    (unsigned)frame,
+    LOG_TO_CRTP, "L20 %u %u %s %d %s %d %s %d %u %u\n",
+    (unsigned)frame, (unsigned)started_us,
     letter20_class_name(t.top[0]), (int)t.logit[0],
     letter20_class_name(t.top[1]), (int)t.logit[1],
     letter20_class_name(t.top[2]), (int)t.logit[2],
